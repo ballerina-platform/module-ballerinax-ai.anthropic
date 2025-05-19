@@ -29,14 +29,14 @@ Here's how to initialize the Model Provider:
 import ballerina/ai;
 import ballerinax/ai.model.provider.anthropic;
 
-final ai:ModelProvider openAiModel = check new anthropic:Provider("anthropicAiApiKey", anthropic:CLAUDE_3_7_SONNET_20250219, "2023-06-01");
+final ai:ModelProvider anthropicModel = check new anthropic:Provider("anthropicAiApiKey", anthropic:CLAUDE_3_7_SONNET_20250219, "2023-06-01");
 ```
 
 ### Step 4: Invoke chat completion
 
 ```
 ai:ChatMessage[] chatMessages = [{role: "user", content: "hi"}];
-ai:ChatAssistantMessage response = check openAiModel->chat(chatMessages, tools = []);
+ai:ChatAssistantMessage response = check anthropicModel->chat(chatMessages, tools = []);
 
 chatMessages.push(response);
 ```
