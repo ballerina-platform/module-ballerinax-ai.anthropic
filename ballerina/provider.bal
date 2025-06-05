@@ -20,6 +20,7 @@ import ballerina/http;
 const DEFAULT_ANTHROPIC_SERVICE_URL = "https://api.anthropic.com/v1";
 const DEFAULT_MAX_TOKEN_COUNT = 512;
 const DEFAULT_TEMPERATURE = 0.7d;
+const ANTHROPIC_API_VERSION = "2023-06-01";
 
 # Provider is a client class that provides an interface for interacting with Anthropic Large Language Models.
 public isolated client class Provider {
@@ -27,7 +28,6 @@ public isolated client class Provider {
     private final http:Client AnthropicClient;
     private final string apiKey;
     private final string modelType;
-    private final string apiVersion;
     private final int maxTokens;
 
     # Initializes the Anthropic model with the given connection configuration and model configuration.
@@ -42,7 +42,6 @@ public isolated client class Provider {
     # + return - `nil` on successful initialization; otherwise, returns an `ai:Error`
     public isolated function init(@display {label: "API Key"} string apiKey,
             @display {label: "Model Type"} ANTHROPIC_MODEL_NAMES modelType,
-            @display {label: "API Version"} string apiVersion,
             @display {label: "Service URL"} string serviceUrl = DEFAULT_ANTHROPIC_SERVICE_URL,
             @display {label: "Maximum Tokens"} int maxTokens = DEFAULT_MAX_TOKEN_COUNT,
             @display {label: "Temperature"} decimal temperature = DEFAULT_TEMPERATURE,
@@ -75,7 +74,6 @@ public isolated client class Provider {
         self.AnthropicClient = httpClient;
         self.apiKey = apiKey;
         self.modelType = modelType;
-        self.apiVersion = apiVersion;
         self.maxTokens = maxTokens;
     }
 
@@ -168,7 +166,7 @@ public isolated client class Provider {
         // Send request to Anthropic API with proper headers
         map<string> headers = {
             "x-api-key": self.apiKey,
-            "anthropic-version": self.apiVersion,
+            "anthropic-version": ANTHROPIC_API_VERSION,
             "content-type": "application/json"
         };
 
