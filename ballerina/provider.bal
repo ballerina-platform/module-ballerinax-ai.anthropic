@@ -66,8 +66,7 @@ public isolated client class Provider {
         };
 
         http:Client|error httpClient = new http:Client(serviceUrl, anthropicConfig);
-
-        if (httpClient is error) {
+        if httpClient is error {
             return error ai:Error("Failed to initialize Anthropic Model", httpClient);
         }
 
@@ -180,16 +179,24 @@ public isolated client class Provider {
         foreach ContentBlock block in anthropicResponse.content {
             string blockType = block.'type;
             if blockType == "tool_use" {
-                string blockName = block.name ?: "";
-                json inputJson = block?.input;
-                toolCalls.push({
-                    name: blockName,
-                    arguments: inputJson.toJsonString()
-                });
+                toolCalls.push(check self.mapContentToFunctionCall(block));
             } else if blockType == "text" {
                 content = block.text;
             }
         }
         return {role: ai:ASSISTANT, toolCalls: toolCalls == [] ? () : toolCalls, content};
+    }
+
+    private isolated function mapContentToFunctionCall(ContentBlock block) returns ai:FunctionCall|ai:LlmError {
+        string? blockName = block.name;
+        if blockName is () {
+            return error ai:LlmError("Invalid or malformed name received in function call response.");
+        }
+        json inputJson = block?.input;
+        map<json>?|error arguments = inputJson.cloneWithType();
+        if arguments is error {
+            return error ai:LlmError("Invalid or malformed arguments received in function call response.", arguments);
+        }
+        return {name: blockName, arguments};
     }
 }
