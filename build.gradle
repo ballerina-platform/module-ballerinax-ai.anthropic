@@ -60,7 +60,7 @@ allprojects {
 def moduleVersion = project.version.replace("-SNAPSHOT", "")
 
 task build {
-    dependsOn(':ai.model.provider.anthropic-ballerina:build')
+    dependsOn(':ai.anthropic-ballerina:build')
 }
 
 release {
