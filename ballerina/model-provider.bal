@@ -29,6 +29,7 @@ public isolated client class ModelProvider {
     private final string apiKey;
     private final string modelType;
     private final int maxTokens;
+    private final decimal temperature;
 
     # Initializes the Anthropic model with the given connection configuration and model configuration.
     #
@@ -40,7 +41,7 @@ public isolated client class ModelProvider {
     # + temperature - The temperature for controlling randomness in the model's output  
     # + connectionConfig - Additional HTTP connection configuration
     # + return - `nil` on successful initialization; otherwise, returns an `ai:Error`
-    public isolated function init(@display {label: "API Key"} string apiKey,
+    public isolated function init(string apiKey,
             @display {label: "Model Type"} ANTHROPIC_MODEL_NAMES modelType,
             @display {label: "Service URL"} string serviceUrl = DEFAULT_ANTHROPIC_SERVICE_URL,
             @display {label: "Maximum Tokens"} int maxTokens = DEFAULT_MAX_TOKEN_COUNT,
@@ -74,6 +75,7 @@ public isolated client class ModelProvider {
         self.apiKey = apiKey;
         self.modelType = modelType;
         self.maxTokens = maxTokens;
+        self.temperature = temperature;
     }
 
     # Converts standard ai:ChatMessage array to Anthropic's message format
@@ -148,9 +150,10 @@ public isolated client class ModelProvider {
 
         // Prepare request payload
         map<json> requestPayload = {
-            "model": self.modelType,
-            "max_tokens": self.maxTokens,
-            "messages": anthropicMessages
+            model: self.modelType,
+            max_tokens: self.maxTokens,
+            messages: anthropicMessages,
+            temperature: self.temperature
         };
 
         if stop is string {
