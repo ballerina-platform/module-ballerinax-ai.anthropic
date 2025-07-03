@@ -155,7 +155,7 @@ class GenerateMethodModificationTask implements ModifierTask<SourceModifierConte
     }
 
     private void evaluateGenerateMethod(Document document, SemanticModel semanticModel,
-                                        ModulePartNode modulePartNode, AiAnthropicCodeModifier.AnalysisData analysisData) {
+                            ModulePartNode modulePartNode, AiAnthropicCodeModifier.AnalysisData analysisData) {
         new GenerateMethodVisitor(semanticModel, document, analysisData)
                 .visitGenerateMethodsAndGenerateJsonSchema(modulePartNode);
     }
