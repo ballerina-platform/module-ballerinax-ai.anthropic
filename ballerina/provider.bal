@@ -16,6 +16,7 @@
 
 import ballerina/ai;
 import ballerina/http;
+import ballerina/jballerina.java;
 
 const DEFAULT_ANTHROPIC_SERVICE_URL = "https://api.anthropic.com/v1";
 const DEFAULT_MAX_TOKEN_COUNT = 512;
@@ -76,6 +77,16 @@ public isolated client class Provider {
         self.maxTokens = maxTokens;
     }
 
+    # Sends a chat request to the model and generates a value that belongs to the type
+    # corresponding to the type descriptor argument.
+    # 
+    # + prompt - The prompt to use in the chat messages
+    # + td - Type descriptor specifying the expected return type format
+    # + return - Generates a value that belongs to the type, or an error if generation fails
+    isolated remote function generate(ai:Prompt prompt, typedesc<anydata> td = <>) returns td|ai:Error = @java:Method {
+        'class: "io.ballerina.lib.ai.anthropic.Generator"
+    } external;
+
     # Converts standard ai:ChatMessage array to Anthropic's message format
     #
     # + messages - List of chat messages 
@@ -120,7 +131,7 @@ public isolated client class Provider {
         AnthropicTool[] anthropicTools = [];
 
         foreach ai:ChatCompletionFunctions tool in tools {
-            ai:JsonInputSchema schema = tool.parameters ?: {'type: "object", properties: {}};
+            map<json> schema = tool.parameters ?: {'type: "object", properties: {}};
 
             // Create Anthropic tool with input_schema instead of parameters
             AnthropicTool AnthropicTool = {
@@ -179,24 +190,24 @@ public isolated client class Provider {
         foreach ContentBlock block in anthropicResponse.content {
             string blockType = block.'type;
             if blockType == "tool_use" {
-                toolCalls.push(check self.mapContentToFunctionCall(block));
+                toolCalls.push(check mapContentToFunctionCall(block));
             } else if blockType == "text" {
                 content = block.text;
             }
         }
         return {role: ai:ASSISTANT, toolCalls: toolCalls == [] ? () : toolCalls, content};
     }
+}
 
-    private isolated function mapContentToFunctionCall(ContentBlock block) returns ai:FunctionCall|ai:LlmError {
-        string? blockName = block.name;
-        if blockName is () {
-            return error ai:LlmError("Invalid or malformed name received in function call response.");
-        }
-        json inputJson = block?.input;
-        map<json>?|error arguments = inputJson.cloneWithType();
-        if arguments is error {
-            return error ai:LlmError("Invalid or malformed arguments received in function call response.", arguments);
-        }
-        return {name: blockName, arguments};
+isolated function mapContentToFunctionCall(ContentBlock block) returns ai:FunctionCall|ai:LlmError {
+    string? blockName = block.name;
+    if blockName is () {
+        return error ai:LlmError("Invalid or malformed name received in function call response.");
     }
+    json inputJson = block?.input;
+    map<json>?|error arguments = inputJson.cloneWithType();
+    if arguments is error {
+        return error ai:LlmError("Invalid or malformed arguments received in function call response.", arguments);
+    }
+    return {name: blockName, arguments};
 }
