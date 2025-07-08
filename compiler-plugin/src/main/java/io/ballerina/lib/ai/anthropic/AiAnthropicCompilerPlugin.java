@@ -22,7 +22,9 @@ import io.ballerina.projects.plugins.CompilerPlugin;
 import io.ballerina.projects.plugins.CompilerPluginContext;
 
 /**
- * Compiler plugin for the Ballerina AI package.
+ * Compiler plugin for the AI Anthropic package.
+ *
+ * @since 1.0.0
  */
 @SuppressWarnings("unused")
 public class AiAnthropicCompilerPlugin extends CompilerPlugin {

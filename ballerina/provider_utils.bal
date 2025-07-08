@@ -17,7 +17,7 @@
 import ballerina/ai;
 import ballerina/http;
 
-type SchemaResponse record {|
+type ResponseSchema record {|
     map<json> schema;
     boolean isOriginallyJsonObject = true;
 |};
@@ -31,7 +31,7 @@ const GET_RESULTS_TOOL = "getResults";
 const FUNCTION = "function";
 const NO_RELEVANT_RESPONSE_FROM_THE_LLM = "No relevant response from the LLM";
 
-isolated function generateJsonObjectSchema(map<json> schema) returns SchemaResponse {
+isolated function generateJsonObjectSchema(map<json> schema) returns ResponseSchema {
     string[] supportedMetaDataFields = ["$schema", "$id", "$anchor", "$comment", "title", "description"];
 
     if schema["type"] == "object" {
@@ -70,31 +70,31 @@ isolated function parseResponseAsType(string resp,
     return result;
 }
 
-isolated function getExpectedResponseSchema(typedesc<anydata> expectedResponseTypedesc) returns SchemaResponse|ai:Error {
+isolated function getExpectedResponseSchema(typedesc<anydata> expectedResponseTypedesc) returns ResponseSchema|ai:Error {
     // Restricted at compile-time for now.
     typedesc<json> td = checkpanic expectedResponseTypedesc.ensureType();
     return generateJsonObjectSchema(check generateJsonSchemaForTypedescAsJson(td));
 }
 
-isolated function genarateChatCreationContent(ai:Prompt prompt) returns string|ai:Error {
+isolated function generateChatCreationContent(ai:Prompt prompt) returns string|ai:Error {
     string[] & readonly strings = prompt.strings;
-    string str = strings[0];
     anydata[] insertions = prompt.insertions;
+    string promptStr = strings[0];
     foreach int i in 0 ..< insertions.length() {
+        string str = strings[i + 1];
         anydata insertion = insertions[i];
-        string promptStr = strings[i + 1];
 
         if insertion is ai:TextDocument {
-            str += insertion.content + " " + promptStr;
+            promptStr += insertion.content + " " + str;
             continue;
         }
 
         if insertion is ai:TextDocument[] {
             foreach ai:TextDocument doc in insertion {
-                str += doc.content  + " ";
-
+                promptStr += doc.content  + " ";
+                
             }
-            str += promptStr;
+            promptStr += str;
             continue;
         }
 
@@ -102,15 +102,15 @@ isolated function genarateChatCreationContent(ai:Prompt prompt) returns string|a
             return error ai:Error("Only Text Documents are currently supported.");
         }
 
-        str += insertion.toString() + promptStr;
+        promptStr += insertion.toString() + str;
     }
-    return str.trim();
+    return promptStr.trim();
 }
 
 isolated function handleParseResponseError(error chatResponseError) returns error {
-    if chatResponseError.message().includes(JSON_CONVERSION_ERROR)
-            || chatResponseError.message().includes(CONVERSION_ERROR) {
-        return error(string `${ERROR_MESSAGE}`, detail = chatResponseError);
+    string msg = chatResponseError.message();
+    if msg.includes(JSON_CONVERSION_ERROR) || msg.includes(CONVERSION_ERROR) {
+        return error(ERROR_MESSAGE, chatResponseError);
     }
     return chatResponseError;
 }
@@ -120,21 +120,20 @@ isolated function getGetResultsToolChoice() returns map<json> => {
         name: GET_RESULTS_TOOL
     };
 
-isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|error {
-    return [{
+isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|error =>
+    [{
         name: GET_RESULTS_TOOL,
         input_schema: check parameters.cloneWithType(),
         description: "Tool to call with the resp onse from a large language model (LLM) for a user prompt."
     }];
-}
 
 isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType, 
             int maxTokens, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc) returns anydata|ai:Error {
-    string chatContent = check genarateChatCreationContent(prompt);
-    SchemaResponse schemaResponse = check getExpectedResponseSchema(expectedResponseTypedesc);
-    map<json>[]|error tools = getGetResultsTool(schemaResponse.schema);
+    string chatContent = check generateChatCreationContent(prompt);
+    ResponseSchema ResponseSchema = check getExpectedResponseSchema(expectedResponseTypedesc);
+    map<json>[]|error tools = getGetResultsTool(ResponseSchema.schema);
     if tools is error {
-        return error ai:LlmError("Error while generating the tool: " + tools.message());
+        return error("Error in generated schema: " + tools.message());
     }
 
     map<json> request = {
@@ -159,7 +158,7 @@ isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey
     AnthropicApiResponse|error response =
         AnthropicClient->/messages.post(request, headers);
     if response is error {
-        return error ai:LlmError("LLM call failed: " + response.message());
+        return error("LLM call failed: " + response.message());
     }
 
     ai:FunctionCall[] toolCalls = [];
@@ -171,18 +170,18 @@ isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey
     }
 
     if toolCalls.length() == 0 {
-        return error ai:LlmError(NO_RELEVANT_RESPONSE_FROM_THE_LLM);
+        return error(NO_RELEVANT_RESPONSE_FROM_THE_LLM);
     }
 
     ai:FunctionCall tool = toolCalls[0];
     map<json>? arguments = tool.arguments;
 
     if arguments is () {
-        return error ai:LlmError(NO_RELEVANT_RESPONSE_FROM_THE_LLM);
+        return error(NO_RELEVANT_RESPONSE_FROM_THE_LLM);
     }
 
     anydata|error res = parseResponseAsType(arguments.toJsonString(), expectedResponseTypedesc,
-            schemaResponse.isOriginallyJsonObject);
+            ResponseSchema.isOriginallyJsonObject);
     if res is error {
         return error ai:LlmInvalidGenerationError(string `Invalid value returned from the LLM Client, expected: '${
             expectedResponseTypedesc.toBalString()}', found '${res.toBalString()}'`);

@@ -36,7 +36,7 @@ function testGenerateMethodWithBasicReturnType() returns ai:Error? {
     test:assertEquals(rating, 4);
 }
 
-@test:Config 
+@test:Config
 function testGenerateMethodWithBasicArrayReturnType() returns ai:Error? {
     int[]|error rating = claudeProvider->generate(`Evaluate this blogs out of 10.
         Title: ${blog1.title}
@@ -128,23 +128,25 @@ function testGenerateMethodWithInvalidBasicType() returns ai:Error? {
     test:assertTrue((<error>rating).message().includes(ERROR_MESSAGE));
 }
 
-type RecordForInvalidBinding record {|
+type ProductName record {|
     string name;
 |};
 
 @test:Config
 function testGenerateMethodWithInvalidRecordType() returns ai:Error? {
-    RecordForInvalidBinding[]|error rating = trap claudeProvider->generate(
+    ProductName[]|error rating = trap claudeProvider->generate(
                 `Tell me name and the age of the top 10 world class cricketers`);
+    string msg = (<error>rating).message();
     test:assertTrue(rating is error);
-    test:assertTrue((<error>rating).message().includes(RUNTIME_SCHEMA_NOT_SUPPORTED_ERROR_MESSAGE));
+    test:assertTrue(msg.includes(RUNTIME_SCHEMA_NOT_SUPPORTED_ERROR_MESSAGE),
+        string `expected error message to contain: ${RUNTIME_SCHEMA_NOT_SUPPORTED_ERROR_MESSAGE}, but found ${msg}`);
 }
 
-type InvalidRecordArray RecordForInvalidBinding[];
+type ProductNameArray ProductName[];
 
 @test:Config
-function testGenerateMethodWithInvalidRecordType2() returns ai:Error? {
-    InvalidRecordArray|error rating = claudeProvider->generate(
+function testGenerateMethodWithInvalidRecordArrayType2() returns ai:Error? {
+    ProductNameArray|error rating = claudeProvider->generate(
                 `Tell me name and the age of the top 10 world class cricketers`);
     test:assertTrue(rating is error);
     test:assertTrue((<error>rating).message().includes(ERROR_MESSAGE));

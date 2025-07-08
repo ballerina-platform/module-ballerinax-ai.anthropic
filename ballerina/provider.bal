@@ -202,12 +202,12 @@ public isolated client class Provider {
 isolated function mapContentToFunctionCall(ContentBlock block) returns ai:FunctionCall|ai:LlmError {
     string? blockName = block.name;
     if blockName is () {
-        return error ai:LlmError("Invalid or malformed name received in function call response.");
+        return error("Invalid or malformed name received in function call response.");
     }
     json inputJson = block?.input;
     map<json>?|error arguments = inputJson.cloneWithType();
     if arguments is error {
-        return error ai:LlmError("Invalid or malformed arguments received in function call response.", arguments);
+        return error("Invalid or malformed arguments received in function call response.", arguments);
     }
     return {name: blockName, arguments};
 }

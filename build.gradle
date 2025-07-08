@@ -66,7 +66,6 @@ task build {
     dependsOn(':ai.model.provider.anthropic-ballerina:build')
 }
 
-// Ensure native builds before ballerina
 tasks.findByPath(':ai.model.provider.anthropic-ballerina:build').mustRunAfter(':ai.model.provider.anthropic-native:build')
 
 
