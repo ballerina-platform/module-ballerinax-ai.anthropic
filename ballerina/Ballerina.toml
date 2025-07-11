@@ -3,10 +3,10 @@ authors = ["Ballerina"]
 distribution = "2201.12.0"
 keywords = ["AI", "Agent", "Anthropic", "Model", "Provider"]
 license = ["Apache-2.0"]
-name = "ai.model.provider.anthropic"
+name = "ai.anthropic"
 org = "ballerinax"
-repository = "https://github.com/ballerina-platform/module-ballerinax-ai.model.provider.anthropic"
-version = "1.0.1"
+repository = "https://github.com/ballerina-platform/module-ballerinax-ai.anthropic"
+version = "1.0.0"
 
 [platform.java21]
 graalvmCompatible = true
