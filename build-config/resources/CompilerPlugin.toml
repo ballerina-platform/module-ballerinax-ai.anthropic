@@ -3,7 +3,7 @@ id = "ai-compiler-plugin"
 class = "io.ballerina.lib.ai.anthropic.AiAnthropicCompilerPlugin"
 
 [[dependency]]
-path = "../compiler-plugin/build/libs/ai.model.provider.anthropic-compiler-plugin-@project.version@.jar"
+path = "../compiler-plugin/build/libs/ai.anthropic-compiler-plugin-@project.version@.jar"
 
 [[dependency]]
 path = "../compiler-plugin/build/libs/ballerina-to-openapi-@ballerinaToOpenApiVersion.version@.jar"

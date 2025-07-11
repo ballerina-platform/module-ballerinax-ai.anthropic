@@ -128,7 +128,7 @@ isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|er
     }];
 
 isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType, 
-            int maxTokens, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc) returns anydata|ai:Error {
+            int maxTokens, decimal temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc) returns anydata|ai:Error {
     string chatContent = check generateChatCreationContent(prompt);
     ResponseSchema ResponseSchema = check getExpectedResponseSchema(expectedResponseTypedesc);
     map<json>[]|error tools = getGetResultsTool(ResponseSchema.schema);
@@ -145,6 +145,7 @@ isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey
         ],
         model: modelType,
         max_tokens: maxTokens,
+        temperature,
         tools,
         tool_choice: getGetResultsToolChoice()
     };
