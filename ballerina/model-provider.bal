@@ -78,75 +78,16 @@ public isolated client class ModelProvider {
         self.temperature = temperature;
     }
 
-    # Converts standard ai:ChatMessage array to Anthropic's message format
-    #
-    # + messages - List of chat messages 
-    # + return - return value description
-    private isolated function mapToAnthropicMessages(ai:ChatMessage[] messages) returns AnthropicMessage[] {
-        AnthropicMessage[] anthropicMessages = [];
-
-        foreach ai:ChatMessage message in messages {
-            if message is ai:ChatUserMessage {
-                anthropicMessages.push({
-                    role: ai:USER,
-                    content: message.content
-                });
-            } else if message is ai:ChatSystemMessage {
-                // Add a user message containing the system prompt
-                anthropicMessages.push({
-                    role: ai:USER,
-                    content: string `<system>${message.content}</system>\n\n`
-                });
-            } else if message is ai:ChatAssistantMessage && message.content is string {
-                anthropicMessages.push({
-                    role: ai:ASSISTANT,
-                    content: message.content ?: ""
-                });
-            } else if message is ai:ChatFunctionMessage && message.content is string {
-                // Include function results as user messages with special formatting
-                anthropicMessages.push({
-                    role: ai:USER,
-                    content: string `<function_results>\nFunction: ${message.name}\n`
-                        + string `Output: ${message.content ?: ""}\n</function_results>`
-                });
-            }
-        }
-        return anthropicMessages;
-    }
-
-    # Maps ai:ChatCompletionFunctions to Anthropic's tool format
-    #
-    # + tools - Array of tool definitions
-    # + return - Array of Anthropic tool definitions
-    private isolated function mapToAnthropicTools(ai:ChatCompletionFunctions[] tools) returns AnthropicTool[] {
-        AnthropicTool[] anthropicTools = [];
-
-        foreach ai:ChatCompletionFunctions tool in tools {
-            ai:JsonInputSchema schema = tool.parameters ?: {'type: "object", properties: {}};
-
-            // Create Anthropic tool with input_schema instead of parameters
-            AnthropicTool AnthropicTool = {
-                name: tool.name,
-                description: tool.description,
-                input_schema: schema
-            };
-
-            anthropicTools.push(AnthropicTool);
-        }
-
-        return anthropicTools;
-    }
-
     # Uses Anthropic API to generate a response
     # + messages - List of chat messages 
     # + tools - Tool definitions to be used for the tool call
     # + stop - Stop sequence to stop the completion (not used in this implementation)
     # + return - Chat response or an error in case of failures
-    isolated remote function chat(ai:ChatMessage[] messages, ai:ChatCompletionFunctions[] tools = [], string? stop = ())
-        returns ai:ChatAssistantMessage|ai:LlmError {
+    isolated remote function chat(ai:ChatMessage[]|ai:ChatUserMessage messages, ai:ChatCompletionFunctions[] tools = [], string? stop = ())
+        returns ai:ChatAssistantMessage|ai:Error {
 
         // Map messages to Anthropic format
-        AnthropicMessage[] anthropicMessages = self.mapToAnthropicMessages(messages);
+        AnthropicMessage[] anthropicMessages = check self.mapToAnthropicMessages(messages);
 
         // Prepare request payload
         map<json> requestPayload = {
@@ -190,6 +131,74 @@ public isolated client class ModelProvider {
         return {role: ai:ASSISTANT, toolCalls: toolCalls == [] ? () : toolCalls, content};
     }
 
+    # Converts standard ai:ChatMessage array to Anthropic's message format
+    #
+    # + messages - List of chat messages or a user message
+    # + return - return value description
+    private isolated function mapToAnthropicMessages(ai:ChatMessage[]|ai:ChatUserMessage messages)
+    returns AnthropicMessage[]|ai:Error {
+        AnthropicMessage[] anthropicMessages = [];
+        if messages is ai:ChatUserMessage {
+            anthropicMessages.push({
+                role: ai:USER,
+                content: check getChatMessageStringContent(messages.content)
+            });
+            return anthropicMessages;
+        }
+
+        foreach ai:ChatMessage message in messages {
+            if message is ai:ChatUserMessage {
+                anthropicMessages.push({
+                    role: ai:USER,
+                    content: check getChatMessageStringContent(message.content)
+                });
+            } else if message is ai:ChatSystemMessage {
+                // Add a user message containing the system prompt
+                string content = check getChatMessageStringContent(message.content);
+                anthropicMessages.push({
+                    role: ai:USER,
+                    content: string `<system>${content}</system>\n\n`
+                });
+            } else if message is ai:ChatAssistantMessage && message.content is string {
+                anthropicMessages.push({
+                    role: ai:ASSISTANT,
+                    content: message.content ?: ""
+                });
+            } else if message is ai:ChatFunctionMessage && message.content is string {
+                // Include function results as user messages with special formatting
+                anthropicMessages.push({
+                    role: ai:USER,
+                    content: string `<function_results>\nFunction: ${message.name}\n`
+                        + string `Output: ${message.content ?: ""}\n</function_results>`
+                });
+            }
+        }
+        return anthropicMessages;
+    }
+
+    # Maps ai:ChatCompletionFunctions to Anthropic's tool format
+    #
+    # + tools - Array of tool definitions
+    # + return - Array of Anthropic tool definitions
+    private isolated function mapToAnthropicTools(ai:ChatCompletionFunctions[] tools) returns AnthropicTool[] {
+        AnthropicTool[] anthropicTools = [];
+
+        foreach ai:ChatCompletionFunctions tool in tools {
+            map<json> schema = tool.parameters ?: {'type: "object", properties: {}};
+
+            // Create Anthropic tool with input_schema instead of parameters
+            AnthropicTool AnthropicTool = {
+                name: tool.name,
+                description: tool.description,
+                input_schema: schema
+            };
+
+            anthropicTools.push(AnthropicTool);
+        }
+
+        return anthropicTools;
+    }
+
     private isolated function mapContentToFunctionCall(ContentBlock block) returns ai:FunctionCall|ai:LlmError {
         string? blockName = block.name;
         if blockName is () {
@@ -202,4 +211,48 @@ public isolated client class ModelProvider {
         }
         return {name: blockName, arguments};
     }
+
+    // TODO
+    isolated remote function generate(ai:Prompt prompt, typedesc<anydata> td = <>) returns td|ai:Error = external;
+}
+
+isolated function getChatMessageStringContent(ai:Prompt|string prompt) returns string|ai:Error {
+    if prompt is string {
+        return prompt;
+    }
+    string[] & readonly strings = prompt.strings;
+    anydata[] insertions = prompt.insertions;
+    string promptStr = strings[0];
+    foreach int i in 0 ..< insertions.length() {
+        string str = strings[i + 1];
+        anydata insertion = insertions[i];
+
+        if insertion is ai:TextDocument|ai:TextChunk {
+            promptStr += insertion.content + " " + str;
+            continue;
+        }
+
+        if insertion is ai:TextDocument[] {
+            foreach ai:TextDocument doc in insertion {
+                promptStr += doc.content + " ";
+            }
+            promptStr += str;
+            continue;
+        }
+
+        if insertion is ai:TextChunk[] {
+            foreach ai:TextChunk doc in insertion {
+                promptStr += doc.content + " ";
+            }
+            promptStr += str;
+            continue;
+        }
+
+        if insertion is ai:Document {
+            return error ai:Error("Only Text Documents are currently supported.");
+        }
+
+        promptStr += insertion.toString() + str;
+    }
+    return promptStr.trim();
 }
