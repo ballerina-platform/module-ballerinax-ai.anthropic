@@ -20,6 +20,7 @@ plugins {
     id 'com.github.johnrengelman.shadow'
     id 'de.undercouch.download'
     id 'net.researchgate.release'
+    id "com.github.spotbugs-base"
 }
 
 allprojects {
@@ -60,8 +61,13 @@ allprojects {
 def moduleVersion = project.version.replace("-SNAPSHOT", "")
 
 task build {
+    dependsOn(':ai.model.provider.anthropic-native:build')
+    dependsOn ":ai.model.provider.anthropic-compiler-plugin:build"
     dependsOn(':ai.model.provider.anthropic-ballerina:build')
 }
+
+tasks.findByPath(':ai.model.provider.anthropic-ballerina:build').mustRunAfter(':ai.model.provider.anthropic-native:build')
+
 
 release {
     buildTasks = ['build']
