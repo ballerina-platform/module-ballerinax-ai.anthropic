@@ -34,7 +34,7 @@ final ai:ModelProvider anthropicModel = check new anthropic:ModelProvider("anthr
 
 ### Step 4: Invoke chat completion
 
-```
+```ballerina
 ai:ChatMessage[] chatMessages = [{role: "user", content: "hi"}];
 ai:ChatAssistantMessage response = check anthropicModel->chat(chatMessages, tools = []);
 
