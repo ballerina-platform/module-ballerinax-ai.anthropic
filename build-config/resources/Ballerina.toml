@@ -3,10 +3,16 @@ authors = ["Ballerina"]
 distribution = "2201.12.0"
 keywords = ["AI", "Agent", "Anthropic", "Model", "Provider"]
 license = ["Apache-2.0"]
-name = "ai.model.provider.anthropic"
+name = "ai.anthropic"
 org = "ballerinax"
-repository = "https://github.com/ballerina-platform/module-ballerinax-ai.model.provider.anthropic"
+repository = "https://github.com/ballerina-platform/module-ballerinax-ai.anthropic"
 version = "@toml.version@"
 
 [platform.java21]
 graalvmCompatible = true
+
+[[platform.java21.dependency]]
+groupId = "io.ballerina.lib"
+artifactId = "ai.anthropic-native"
+version = "@toml.version@"
+path = "../native/build/libs/ai.anthropic-native-@project.version@.jar"

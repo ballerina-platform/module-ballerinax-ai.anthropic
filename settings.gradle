@@ -7,6 +7,7 @@
 
 pluginManagement {
     plugins {
+        id "com.github.spotbugs-base" version "${spotbugsPluginVersion}"
         id "com.github.johnrengelman.shadow" version "${shadowJarPluginVersion}"
         id "de.undercouch.download" version "${downloadPluginVersion}"
         id "net.researchgate.release" version "${releasePluginVersion}"
@@ -29,11 +30,17 @@ plugins {
     id "com.gradle.enterprise" version "3.2"
 }
 
-rootProject.name = 'module-ballerinax-ai.model.provider.anthropic'
+rootProject.name = 'module-ballerinax-ai.anthropic'
 
-include ':ai.model.provider.anthropic-ballerina'
+include ':checkstyle'
+include ':ai.anthropic-native'
+include ':ai.anthropic-ballerina'
+include ':ai.anthropic-compiler-plugin'
 
-project(':ai.model.provider.anthropic-ballerina').projectDir = file("ballerina")
+project(':checkstyle').projectDir = file("build-config${File.separator}checkstyle")
+project(':ai.anthropic-native').projectDir = file("native")
+project(':ai.anthropic-ballerina').projectDir = file("ballerina")
+project(':ai.anthropic-compiler-plugin').projectDir = file('compiler-plugin')
 
 gradleEnterprise {
     buildScan {
