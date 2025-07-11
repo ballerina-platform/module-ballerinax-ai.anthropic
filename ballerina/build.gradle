@@ -102,8 +102,8 @@ clean {
     delete 'build'
 }
 
-build.dependsOn ':ai.model.provider.anthropic-native:build'
-build.dependsOn ":ai.model.provider.anthropic-compiler-plugin:build"
+build.dependsOn ':ai.anthropic-native:build'
+build.dependsOn ":ai.anthropic-compiler-plugin:build"
 build.dependsOn "generatePomFileForMavenPublication"
 publishToMavenLocal.dependsOn build
 publish.dependsOn build

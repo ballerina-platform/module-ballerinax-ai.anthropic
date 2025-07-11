@@ -197,8 +197,8 @@ class GenerateMethodModificationTask implements ModifierTask<SourceModifierConte
 
     private class GenerateMethodJsonSchemaGenerator extends NodeVisitor {
         private static final String GENERATE_METHOD_NAME = "generate";
-        private static final String ANTHROPIC_MODEL_PROVIDER_NAME = "Provider";
-        private static final String ANTHROPIC_MODEL_PROVIDER_MODULE_NAME = "ai.model.provider.anthropic";
+        private static final String ANTHROPIC_MODEL_PROVIDER_NAME = "ModelProvider";
+        private static final String ANTHROPIC_MODEL_PROVIDER_MODULE_NAME = "ai.anthropic";
         private static final String ANTHROPIC_MODEL_PROVIDER_MODULE_VERSION = "1";
         private static final String ANTHROPIC_MODEL_PROVIDER_MODULE_ORG = "ballerinax";
         private static final String STRING = "string";

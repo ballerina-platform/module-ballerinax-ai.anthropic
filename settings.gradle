@@ -33,14 +33,14 @@ plugins {
 rootProject.name = 'module-ballerinax-ai.anthropic'
 
 include ':checkstyle'
-include ':ai.model.provider.anthropic-native'
-include ':ai.model.provider.anthropic-ballerina'
-include ':ai.model.provider.anthropic-compiler-plugin'
+include ':ai.anthropic-native'
+include ':ai.anthropic-ballerina'
+include ':ai.anthropic-compiler-plugin'
 
 project(':checkstyle').projectDir = file("build-config${File.separator}checkstyle")
-project(':ai.model.provider.anthropic-native').projectDir = file("native")
-project(':ai.model.provider.anthropic-ballerina').projectDir = file("ballerina")
-project(':ai.model.provider.anthropic-compiler-plugin').projectDir = file('compiler-plugin')
+project(':ai.anthropic-native').projectDir = file("native")
+project(':ai.anthropic-ballerina').projectDir = file("ballerina")
+project(':ai.anthropic-compiler-plugin').projectDir = file('compiler-plugin')
 
 gradleEnterprise {
     buildScan {
