@@ -1,5 +1,5 @@
 [plugin]
-id = "ai-compiler-plugin"
+id = "ai-anthropic-compiler-plugin"
 class = "io.ballerina.lib.ai.anthropic.AiAnthropicCompilerPlugin"
 
 [[dependency]]
