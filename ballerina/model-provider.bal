@@ -79,7 +79,7 @@ public isolated client class ModelProvider {
     }
 
     # Uses Anthropic API to generate a response
-    # + messages - List of chat messages 
+    # + messages - List of chat messages or a user message
     # + tools - Tool definitions to be used for the tool call
     # + stop - Stop sequence to stop the completion (not used in this implementation)
     # + return - Chat response or an error in case of failures
