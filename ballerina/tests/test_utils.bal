@@ -41,7 +41,7 @@ isolated function getExpectedParameterSchema(string message) returns map<json> {
         return expectedParameterSchemaStringForRateBlog4;
     }
 
-    if message.startsWith("How would you rate this text blogs") {
+    if message.startsWith("How would you rate these text blogs") {
         return expectedParameterSchemaStringForRateBlog5;
     }
 
@@ -57,7 +57,19 @@ isolated function getExpectedParameterSchema(string message) returns map<json> {
         return expectedParamterSchemaStringForCountry;
     }
 
-    if message.startsWith("Describe the following images") {
+    if message.startsWith("Describe the following 2 images") {
+        return expectedParameterSchemaStringForRateBlog7;
+    }
+
+    if message.startsWith("Please describe the following image and the doc") {
+        return expectedParameterSchemaStringForRateBlog7;
+    }
+
+    if message.startsWith("Describe the following text document and image document") {
+        return expectedParameterSchemaStringForRateBlog7;
+    }
+
+    if message.startsWith("What is the content in this document") {
         return expectedParameterSchemaStringForRateBlog7;
     }
 
@@ -69,7 +81,7 @@ isolated function getExpectedParameterSchema(string message) returns map<json> {
         return expectedParameterSchemaStringForRateBlog8;
     }
 
-     if message.startsWith("Please describe the image") {
+    if message.startsWith("Please describe the image") {
         return expectedParameterSchemaStringForRateBlog8;
     }
 
@@ -100,17 +112,17 @@ isolated function getExpectedParameterSchema(string message) returns map<json> {
     return {};
 }
 
-isolated function getTheMockLLMResult(string message) returns string {
+isolated function getTheMockLLMResult(string message) returns map<json> {
     if message.startsWith("Evaluate this") {
-        return string `{"result": [9, 1]}`;
+        return {result: [9, 1]};
     }
 
     if message.startsWith("Rate this blog") {
-        return "{\"result\": 4}";
+        return {result: 4};
     }
 
     if message.startsWith("Please rate this blogs") {
-        return string `{"result": [${review}, ${review}]}`;
+        return {result: [review, review]};
     }
 
     if message.startsWith("Please rate this blog") {
@@ -118,24 +130,24 @@ isolated function getTheMockLLMResult(string message) returns string {
     }
 
     if message.startsWith("What is") {
-        return "{\"result\": 2}";
+        return {result: 2};
     }
 
     if message.startsWith("Tell me") {
-        return "{\"result\": [{\"name\": \"Virat Kohli\", \"age\": 33}, {\"name\": \"Kane Williamson\", \"age\": 30}]}";
+        return {result: [{name: "Virat Kohli", age: 33}, {name: "Kane Williamson", age: 30}]};
     }
 
     if message.startsWith("Which country") {
-        return "{\"result\": \"Sri Lanka\"}";
+        return {result: "Sri Lanka"};
     }
 
     if message.startsWith("Who is a popular sportsperson") {
-        return "{\"result\": {\"firstName\": \"Simone\", \"middleName\": null, " +
-            "\"lastName\": \"Biles\", \"yearOfBirth\": 1997, \"sport\": \"Gymnastics\"}}";
+        return {result: {firstName: "Simone", middleName: null, 
+            lastName: "Biles", yearOfBirth: 1997, sport: "Gymnastics"}};
     }
 
-    if message.startsWith("How would you rate this text blogs") {
-        return string `{"result": [${review}, ${review}]}`;
+    if message.startsWith("How would you rate these text blogs") {
+        return {"result": [review, review]};
     }
 
     if message.startsWith("How would you rate this text blog") {
@@ -143,28 +155,41 @@ isolated function getTheMockLLMResult(string message) returns string {
     }
 
     if message.startsWith("How would you rate this") {
-        return "{\"result\": 4}";
+        return {result: 4};
     }
 
-    if message.startsWith("Describe the following images") {
-        return "{\"result\": [\"This is a sample image description.\", \"This is a sample image description.\"]}";
+    if message.startsWith("Describe the following 2 images") {
+        return {result: ["This is a sample image description.", "This is a sample image description."]};
+    }
+
+    if message.startsWith("Please describe the following image and the doc") {
+        return {result: ["This is a sample image description.", "This is a sample doc description."]};
+    }
+
+    if message.startsWith("Describe the following text document and image document") {
+        return {result: ["This is a sample image description.", "This is a sample doc description."]};
+    }
+
+    if message.startsWith("What is the content in this document") {
+        return {result: ["This is a sample image description."]};
     }
 
     if message.startsWith("Describe the following image") {
-        return "{\"result\": \"This is a sample image description.\"}";
+        return {result: "This is a sample image description."};
     }
 
     if message.startsWith("Describe the image") {
-        return "{\"result\": \"This is a sample image description.\"}";
+        return {result: "This is a sample image description."};
     }
 
     if message.startsWith("Please describe the image") {
-        return "{\"result\": \"This is a sample image description.\"}";
+        return {result: "This is a sample image description."};
     }
 
-    return "INVALID";
+    return {};
 }
-isolated function getExpectedContentParts(string message) returns (TextContentPart|ImageContentPart)[] {
+
+isolated function getExpectedContentParts(string message) returns (map<anydata>)[] {
     if message.startsWith("Rate this blog") {
         return expectedContentPartsForRateBlog;
     }
@@ -189,7 +214,7 @@ isolated function getExpectedContentParts(string message) returns (TextContentPa
         return expectedContentPartsForRateBlog4;
     }
 
-    if message.startsWith("How would you rate this text blogs") {
+    if message.startsWith("How would you rate these text blogs") {
         return expectedContentPartsForRateBlog9;
     }
 
@@ -216,18 +241,18 @@ isolated function getExpectedContentParts(string message) returns (TextContentPa
         ];
     }
 
-    if message.startsWith("Describe the following images") {
+    if message.startsWith("Describe the following 2 images") {
         return [
-            {"type": "text", "text": "Describe the following images. "},
+            {"type": "text", "text": "Describe the following 2 images. "},
             {
-                "type": "image",
-                "source": {
+                "type": "image_url",
+                "image_url": {
                     "url": string `data:image/png;base64,${imageStr}`
                 }
             },
             {
-                "type": "image",
-                "source": {
+                "type": "image_url",
+                "image_url": {
                     "url": sampleImageUrl
                 }
             },
@@ -235,12 +260,45 @@ isolated function getExpectedContentParts(string message) returns (TextContentPa
         ];
     }
 
+    if message.startsWith("Please describe the following image and the doc") {
+        return [
+            {"type": "text", "text": "Please describe the following image and the doc. "},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": string `data:image/png;base64,${imageStr}`
+                }
+            },
+            {
+                "type": "text",
+                "text": string `Title: ${blog1.title} Content: ${blog1.content}`
+            },
+            {"type": "text", "text": "."}
+        ];
+    }
+
+    if message.startsWith("Describe the following text document and image document") {
+        return [
+            {"type": "text", "text": "Describe the following text document and image document. "},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": string `data:image/png;base64,${imageStr}`
+                }
+            },
+            {
+                "type": "text",
+                "text": string `Title: ${blog1.title} Content: ${blog1.content}`
+            }
+        ];
+    }
+
     if message.startsWith("Describe the following image") {
         return [
             {"type": "text", "text": "Describe the following image. "},
             {
-                "type": "image",
-                "source": {
+                "type": "image_url",
+                "image_url": {
                     "url": string `data:image/*;base64,${imageStr}`
                 }
             },
@@ -252,8 +310,8 @@ isolated function getExpectedContentParts(string message) returns (TextContentPa
         return [
             {"type": "text", "text": "Describe the image. "},
             {
-                "type": "image",
-                "source": {
+                "type": "image_url",
+                "image_url": {
                     "url": sampleImageUrl
                 }
             },
@@ -265,8 +323,8 @@ isolated function getExpectedContentParts(string message) returns (TextContentPa
         return [
             {"type": "text", "text": "Please describe the image. "},
             {
-                "type": "image",
-                "source": {
+                "type": "image_url",
+                "image_url": {
                     "url": "This-is-not-a-valid-url"
                 }
             },

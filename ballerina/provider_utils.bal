@@ -48,6 +48,8 @@ type ImageWithBinaryDataContentPart record {|
     |} 'source;
 |};
 
+type DocumentContentPart TextContentPart|ImageContentPart;
+
 const JSON_CONVERSION_ERROR = "FromJsonStringError";
 const CONVERSION_ERROR = "ConversionError";
 const ERROR_MESSAGE = "Error occurred while attempting to parse the response from the " +
@@ -102,45 +104,51 @@ isolated function getExpectedResponseSchema(typedesc<anydata> expectedResponseTy
     return generateJsonObjectSchema(check generateJsonSchemaForTypedescAsJson(td));
 }
 
-isolated function generateChatCreationMultimodalContent(ai:Prompt prompt)
-                        returns (TextContentPart|ImageContentPart)[]|ai:Error {
+isolated function generateChatCreationContent(ai:Prompt prompt)
+                        returns DocumentContentPart[]|ai:Error {
     string[] & readonly strings = prompt.strings;
     anydata[] insertions = prompt.insertions;
-    (TextContentPart|ImageContentPart)[] contentParts = [];
+    DocumentContentPart[] contentParts = [];
+    string accumulatedTextContent = "";
 
     if strings.length() > 0 {
-        addTextContentpart(buildTextContentPart(strings[0]), contentParts);
+        accumulatedTextContent += strings[0];
     }
 
     foreach int i in 0 ..< insertions.length() {
         anydata insertion = insertions[i];
         string str = strings[i + 1];
 
-        if insertion is ai:TextDocument {
-            addTextContentpart(buildTextContentPart(insertion.content), contentParts);
-        } else if insertion is ai:TextDocument[] {
-            foreach ai:TextDocument doc in insertion {
-                addTextContentpart(buildTextContentPart(doc.content), contentParts);
+        if insertion is ai:Document {
+            addTextContentPart(buildTextContentPart(accumulatedTextContent), contentParts);
+            check addDocumentContentPart(insertion, contentParts);
+            accumulatedTextContent = "";
+        } else if insertion is ai:Document[] {
+            addTextContentPart(buildTextContentPart(accumulatedTextContent), contentParts);
+            foreach ai:Document doc in insertion {
+                check addDocumentContentPart(doc, contentParts);
             }
-        } else if insertion is ai:ImageDocument {
-            contentParts.push(check buildImageContentPart(insertion));
-        } else if insertion is ai:ImageDocument[] {
-            foreach ai:ImageDocument doc in insertion {
-                contentParts.push(check buildImageContentPart(doc));
-            }
-        } else if insertion is ai:Document {
-            return error("Only text, image, audio, and file documents are supported.");
+            accumulatedTextContent = "";
         } else {
-            addTextContentpart(buildTextContentPart(insertion.toString()), contentParts);
+            accumulatedTextContent += insertion.toString();
         }
-
-        addTextContentpart(buildTextContentPart(str), contentParts);
+        accumulatedTextContent += str;
     }
+
+    addTextContentPart(buildTextContentPart(accumulatedTextContent), contentParts);
     return contentParts;
 }
 
-isolated function addTextContentpart(TextContentPart? contentPart, 
-            (TextContentPart|ImageContentPart)[] contentParts) {
+isolated function addDocumentContentPart(ai:Document doc, DocumentContentPart[] contentParts) returns ai:Error? {
+    if doc is ai:TextDocument {
+        return addTextContentPart(buildTextContentPart(doc.content), contentParts);
+    } else if doc is ai:ImageDocument {
+        return contentParts.push(check buildImageContentPart(doc));
+    }
+    return error ai:Error("Only text and image documents are supported.");
+}
+
+isolated function addTextContentPart(TextContentPart? contentPart, DocumentContentPart[] contentParts) {
     if contentPart is TextContentPart {
         return contentParts.push(contentPart);
     }
@@ -158,14 +166,13 @@ isolated function buildTextContentPart(string content) returns TextContentPart? 
 }
 
 isolated function buildImageContentPart(ai:ImageDocument doc) returns ImageContentPart|ai:Error {
-    ai:ImageDocument|constraint:Error validatedImageDoc = constraint:validate(doc);
-    if validatedImageDoc is error {
-        return error("Invalid image document: " + validatedImageDoc.message());
-    }
-
     ai:Url|byte[] content = doc.content;
 
     if content is ai:Url {
+        ai:Url|constraint:Error validationRes = constraint:validate(content);
+        if validationRes is error {
+            return error(validationRes.message(), validationRes.cause());
+        }
         return {
             'source: {
                 url: content
@@ -173,12 +180,7 @@ isolated function buildImageContentPart(ai:ImageDocument doc) returns ImageConte
         };
     }
 
-    if content.length() == 0 {
-        return error("Image content is empty.");
-    }
-
     string? mimeType = doc.metadata?.mimeType;
-
     if mimeType is () {
         return error("Please specify the mimeType for the image document.");
     }
@@ -191,18 +193,7 @@ isolated function buildImageContentPart(ai:ImageDocument doc) returns ImageConte
         };
 }
 
-isolated function constructImageUrl(ai:Url|byte[] content, string? mimeType) returns string|ai:Error {
-    if content is ai:Url {
-        return content;
-    }
-
-    return string `data:${mimeType ?: "image/*"};base64,${check getBase64EncodedString(content)}`;
-}
-
 isolated function getBase64EncodedString(byte[] content) returns string|ai:Error {
-    if content.length() == 0 {
-        return error("Image content is empty.");
-    }
     string|error binaryContent = array:toBase64(content);
     if binaryContent is error {
         return error("Failed to convert byte array to string: " + binaryContent.message() + ", " +
@@ -236,7 +227,7 @@ isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|er
 isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType,
         int maxTokens, decimal temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc)
             returns anydata|ai:Error {
-    (TextContentPart|ImageContentPart)[] chatContent = check generateChatCreationMultimodalContent(prompt);
+    DocumentContentPart[] chatContent = check generateChatCreationContent(prompt);
     ResponseSchema ResponseSchema = check getExpectedResponseSchema(expectedResponseTypedesc);
     map<json>[]|error tools = getGetResultsTool(ResponseSchema.schema);
     if tools is error {
