@@ -33,6 +33,7 @@ service /llm on new http:Listener(8080) {
         TextContentPart initialTextContent = check content[0].fromJsonWithType();
         string initialText = initialTextContent.text.toString();
         test:assertEquals(message["role"], "user");
+        test:assertEquals(content, getExpectedContentParts(initialText));
         json[]? tools = check payload["tools"].ensureType();
         if tools is () || tools.length() == 0 {
             test:assertFail("No tools in the payload");

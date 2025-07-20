@@ -245,14 +245,17 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
         return [
             {"type": "text", "text": "Describe the following 2 images. "},
             {
-                "type": "image_url",
-                "image_url": {
-                    "url": string `data:image/png;base64,${imageStr}`
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": imageStr
                 }
             },
             {
-                "type": "image_url",
-                "image_url": {
+                "type": "image",
+                "source": {
+                    "type": "url",
                     "url": sampleImageUrl
                 }
             },
@@ -264,9 +267,11 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
         return [
             {"type": "text", "text": "Please describe the following image and the doc. "},
             {
-                "type": "image_url",
-                "image_url": {
-                    "url": string `data:image/png;base64,${imageStr}`
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": imageStr
                 }
             },
             {
@@ -281,9 +286,11 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
         return [
             {"type": "text", "text": "Describe the following text document and image document. "},
             {
-                "type": "image_url",
-                "image_url": {
-                    "url": string `data:image/png;base64,${imageStr}`
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": imageStr
                 }
             },
             {
@@ -297,9 +304,11 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
         return [
             {"type": "text", "text": "Describe the following image. "},
             {
-                "type": "image_url",
-                "image_url": {
-                    "url": string `data:image/*;base64,${imageStr}`
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": imageStr
                 }
             },
             {"type": "text", "text": "."}
@@ -310,8 +319,9 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
         return [
             {"type": "text", "text": "Describe the image. "},
             {
-                "type": "image_url",
-                "image_url": {
+                "type": "image",
+                "source": {
+                    "type": "url",
                     "url": sampleImageUrl
                 }
             },
@@ -323,9 +333,10 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
         return [
             {"type": "text", "text": "Please describe the image. "},
             {
-                "type": "image_url",
-                "image_url": {
-                    "url": "This-is-not-a-valid-url"
+                "type": "image",
+                "source": {
+                    "type": "url",
+                    "data": "This-is-not-a-valid-url"
                 }
             },
             {"type": "text", "text": "."}
