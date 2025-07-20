@@ -15,11 +15,37 @@
 // under the License.
 
 import ballerina/ai;
+import ballerina/constraint;
 import ballerina/http;
+import ballerina/lang.array;
 
 type ResponseSchema record {|
     map<json> schema;
     boolean isOriginallyJsonObject = true;
+|};
+
+type TextContentPart record {|
+    readonly string 'type = "text";
+    string text;
+|};
+
+type ImageContentPart ImageWithUrlContentPart|ImageWithBinaryDataContentPart;
+
+type ImageWithUrlContentPart record {|
+    readonly string 'type = "image";
+    record {|
+        readonly "url" 'type = "url";
+        ai:Url url;
+    |} 'source;
+|};
+
+type ImageWithBinaryDataContentPart record {|
+    readonly string 'type = "image";
+    record {|
+        readonly string 'type = "base64";
+        string media_type?;
+        string data;
+    |} 'source;
 |};
 
 const JSON_CONVERSION_ERROR = "FromJsonStringError";
@@ -76,35 +102,113 @@ isolated function getExpectedResponseSchema(typedesc<anydata> expectedResponseTy
     return generateJsonObjectSchema(check generateJsonSchemaForTypedescAsJson(td));
 }
 
-isolated function generateChatCreationContent(ai:Prompt prompt) returns string|ai:Error {
+isolated function generateChatCreationMultimodalContent(ai:Prompt prompt)
+                        returns (TextContentPart|ImageContentPart)[]|ai:Error {
     string[] & readonly strings = prompt.strings;
     anydata[] insertions = prompt.insertions;
-    string promptStr = strings[0];
+    (TextContentPart|ImageContentPart)[] contentParts = [];
+
+    if strings.length() > 0 {
+        addTextContentpart(buildTextContentPart(strings[0]), contentParts);
+    }
+
     foreach int i in 0 ..< insertions.length() {
-        string str = strings[i + 1];
         anydata insertion = insertions[i];
+        string str = strings[i + 1];
 
         if insertion is ai:TextDocument {
-            promptStr += insertion.content + " " + str;
-            continue;
-        }
-
-        if insertion is ai:TextDocument[] {
+            addTextContentpart(buildTextContentPart(insertion.content), contentParts);
+        } else if insertion is ai:TextDocument[] {
             foreach ai:TextDocument doc in insertion {
-                promptStr += doc.content  + " ";
-                
+                addTextContentpart(buildTextContentPart(doc.content), contentParts);
             }
-            promptStr += str;
-            continue;
+        } else if insertion is ai:ImageDocument {
+            contentParts.push(check buildImageContentPart(insertion));
+        } else if insertion is ai:ImageDocument[] {
+            foreach ai:ImageDocument doc in insertion {
+                contentParts.push(check buildImageContentPart(doc));
+            }
+        } else if insertion is ai:Document {
+            return error("Only text, image, audio, and file documents are supported.");
+        } else {
+            addTextContentpart(buildTextContentPart(insertion.toString()), contentParts);
         }
 
-        if insertion is ai:Document {
-            return error ai:Error("Only Text Documents are currently supported.");
-        }
-
-        promptStr += insertion.toString() + str;
+        addTextContentpart(buildTextContentPart(str), contentParts);
     }
-    return promptStr.trim();
+    return contentParts;
+}
+
+isolated function addTextContentpart(TextContentPart? contentPart, 
+            (TextContentPart|ImageContentPart)[] contentParts) {
+    if contentPart is TextContentPart {
+        return contentParts.push(contentPart);
+    }
+}
+
+isolated function buildTextContentPart(string content) returns TextContentPart? {
+    if content.length() == 0 {
+        return;
+    }
+
+    return {
+        'type: "text",
+        text: content
+    };
+}
+
+isolated function buildImageContentPart(ai:ImageDocument doc) returns ImageContentPart|ai:Error {
+    ai:ImageDocument|constraint:Error validatedImageDoc = constraint:validate(doc);
+    if validatedImageDoc is error {
+        return error("Invalid image document: " + validatedImageDoc.message());
+    }
+
+    ai:Url|byte[] content = doc.content;
+
+    if content is ai:Url {
+        return {
+            'source: {
+                url: content
+            }
+        };
+    }
+
+    if content.length() == 0 {
+        return error("Image content is empty.");
+    }
+
+    string? mimeType = doc.metadata?.mimeType;
+
+    if mimeType is () {
+        return error("Please specify the mimeType for the image document.");
+    }
+
+    return {
+            'source: {
+                media_type: mimeType,
+                data: check getBase64EncodedString(content)
+            }
+        };
+}
+
+isolated function constructImageUrl(ai:Url|byte[] content, string? mimeType) returns string|ai:Error {
+    if content is ai:Url {
+        return content;
+    }
+
+    return string `data:${mimeType ?: "image/*"};base64,${check getBase64EncodedString(content)}`;
+}
+
+isolated function getBase64EncodedString(byte[] content) returns string|ai:Error {
+    if content.length() == 0 {
+        return error("Image content is empty.");
+    }
+    string|error binaryContent = array:toBase64(content);
+    if binaryContent is error {
+        return error("Failed to convert byte array to string: " + binaryContent.message() + ", " +
+                        binaryContent.detail().toBalString());
+    }
+    return binaryContent;
 }
 
 isolated function handleParseResponseError(error chatResponseError) returns error {
@@ -116,20 +220,23 @@ isolated function handleParseResponseError(error chatResponseError) returns erro
 }
 
 isolated function getGetResultsToolChoice() returns map<json> => {
-        'type: "tool",
-        name: GET_RESULTS_TOOL
-    };
+    'type: "tool",
+    name: GET_RESULTS_TOOL
+};
 
 isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|error =>
-    [{
+    [
+    {
         name: GET_RESULTS_TOOL,
         input_schema: check parameters.cloneWithType(),
         description: "Tool to call with the resp onse from a large language model (LLM) for a user prompt."
-    }];
+    }
+];
 
-isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType, 
-            int maxTokens, decimal temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc) returns anydata|ai:Error {
-    string chatContent = check generateChatCreationContent(prompt);
+isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType,
+        int maxTokens, decimal temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc)
+            returns anydata|ai:Error {
+    (TextContentPart|ImageContentPart)[] chatContent = check generateChatCreationMultimodalContent(prompt);
     ResponseSchema ResponseSchema = check getExpectedResponseSchema(expectedResponseTypedesc);
     map<json>[]|error tools = getGetResultsTool(ResponseSchema.schema);
     if tools is error {
@@ -159,7 +266,7 @@ isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey
     AnthropicApiResponse|error response =
         AnthropicClient->/messages.post(request, headers);
     if response is error {
-        return error("LLM call failed: " + response.message());
+        return error("LLM call failed: ", response);
     }
 
     ai:FunctionCall[] toolCalls = [];

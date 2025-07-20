@@ -25,12 +25,13 @@ service /llm on new http:Listener(8080) {
 
         json[] messages = check payload["messages"].ensureType();
         map<json> message = check messages[0].ensureType();
-        string? content = check message["content"].ensureType();
+        json[]? content = check message["content"].ensureType();
         if content is () {
             test:assertFail("Expected content in the payload");
         }
 
-        test:assertEquals(content, getExpectedPrompt(content));
+        TextContentPart initialTextContent = check content[0].fromJsonWithType();
+        string initialText = initialTextContent.text.toString();
         test:assertEquals(message["role"], "user");
         json[]? tools = check payload["tools"].ensureType();
         if tools is () || tools.length() == 0 {
@@ -40,10 +41,12 @@ service /llm on new http:Listener(8080) {
         map<json> tool = check tools[0].ensureType();
         map<json>? parameters = check tool["input_schema"].ensureType();
         if parameters is () {
-            test:assertFail("No parameters in the expected tool in the test with content: " + content);
+            test:assertFail("No parameters in the expected tool in the test with content: " 
+                + content.toJsonString());
         }
 
-        test:assertEquals(parameters, getExpectedParameterSchema(content));
-        return getTestServiceResponse(content);
+        test:assertEquals(parameters, getExpectedParameterSchema(initialText),
+                string `Test failed for prompt with initial content, ${initialText}`);
+        return getTestServiceResponse(initialText);
     }
 }
