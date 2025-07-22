@@ -29,8 +29,6 @@ type TextContentPart record {|
     string text;
 |};
 
-type ImageContentPart ImageWithUrlContentPart|ImageWithBinaryDataContentPart;
-
 type ImageWithUrlContentPart record {|
     readonly string 'type = "image";
     record {|
@@ -48,7 +46,36 @@ type ImageWithBinaryDataContentPart record {|
     |} 'source;
 |};
 
-type DocumentContentPart TextContentPart|ImageContentPart;
+type ImageContentPart ImageWithUrlContentPart|ImageWithBinaryDataContentPart;
+
+type FileWithUrlContentPart record {|
+    readonly string 'type = "document";
+    record {|
+        readonly "url" 'type = "url";
+        ai:Url url;
+    |} 'source;
+|};
+
+type FileWithBinaryDataContentPart record {|
+    readonly string 'type = "document";
+    record {|
+        readonly "base64" 'type = "base64";
+        string media_type;
+        string data;
+    |} 'source;
+|};
+
+type FileWithFileIdContentPart record {|
+    readonly string 'type = "document";
+    record {|
+        readonly "file" 'type = "file";
+        string file_id;
+    |} 'source;
+|};
+
+type FileContentPart FileWithUrlContentPart|FileWithBinaryDataContentPart|FileWithFileIdContentPart;
+
+type DocumentContentPart TextContentPart|ImageContentPart|FileContentPart;
 
 const JSON_CONVERSION_ERROR = "FromJsonStringError";
 const CONVERSION_ERROR = "ConversionError";
@@ -104,8 +131,7 @@ isolated function getExpectedResponseSchema(typedesc<anydata> expectedResponseTy
     return generateJsonObjectSchema(check generateJsonSchemaForTypedescAsJson(td));
 }
 
-isolated function generateChatCreationContent(ai:Prompt prompt)
-                        returns DocumentContentPart[]|ai:Error {
+isolated function generateChatCreationContent(ai:Prompt prompt) returns DocumentContentPart[]|ai:Error {
     string[] & readonly strings = prompt.strings;
     anydata[] insertions = prompt.insertions;
     DocumentContentPart[] contentParts = [];
@@ -144,6 +170,8 @@ isolated function addDocumentContentPart(ai:Document doc, DocumentContentPart[] 
         return addTextContentPart(buildTextContentPart(doc.content), contentParts);
     } else if doc is ai:ImageDocument {
         return contentParts.push(check buildImageContentPart(doc));
+    } else if doc is ai:FileDocument {
+        return contentParts.push(check buildFileContentPart(doc));
     }
     return error ai:Error("Only text and image documents are supported.");
 }
@@ -191,6 +219,40 @@ isolated function buildImageContentPart(ai:ImageDocument doc) returns ImageConte
                 data: check getBase64EncodedString(content)
             }
         };
+}
+
+isolated function buildFileContentPart(ai:FileDocument doc) returns FileContentPart|ai:Error {
+    byte[]|ai:Url|ai:FileId content = doc.content;
+    if content is ai:Url {
+        ai:Url|constraint:Error validationDoc = constraint:validate(content);
+        if validationDoc is error {
+            return error(validationDoc.message(), validationDoc.cause());
+        }
+
+        return {
+            'source: {
+                url: content
+            }
+        };
+    } else if content is ai:FileId {
+        return {
+            'source: {
+                file_id: content.fileId
+            }
+        };
+    }
+
+    string? mimeType = doc.metadata?.mimeType;
+    if mimeType is () {
+        return error("Please specify the mimeType for the file document.");
+    }
+    
+    return {
+        'source: {
+            media_type: mimeType,
+            data: check getBase64EncodedString(<byte[]>content)
+        }
+    };
 }
 
 isolated function getBase64EncodedString(byte[] content) returns string|ai:Error {
@@ -251,7 +313,8 @@ isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey
     map<string> headers = {
         "x-api-key": apiKey,
         "anthropic-version": ANTHROPIC_API_VERSION,
-        "content-type": "application/json"
+        "content-type": "application/json",
+        "anthropic-beta": "files-api-2025-04-14"
     };
 
     AnthropicApiResponse|error response =
