@@ -147,14 +147,14 @@ isolated function generateChatCreationContent(ai:Prompt prompt) returns Document
 
         if insertion is ai:Document {
             addTextContentPart(buildTextContentPart(accumulatedTextContent), contentParts);
-            check addDocumentContentPart(insertion, contentParts);
             accumulatedTextContent = "";
+            check addDocumentContentPart(insertion, contentParts);
         } else if insertion is ai:Document[] {
             addTextContentPart(buildTextContentPart(accumulatedTextContent), contentParts);
+            accumulatedTextContent = "";
             foreach ai:Document doc in insertion {
                 check addDocumentContentPart(doc, contentParts);
             }
-            accumulatedTextContent = "";
         } else {
             accumulatedTextContent += insertion.toString();
         }
