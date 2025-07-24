@@ -80,11 +80,11 @@ function testGenerateMethodWithTextDocumentArray() returns error? {
 @test:Config
 function testGenerateMethodWithImageDocumentWithBinaryData() returns ai:Error? {
     ai:ImageDocument img = {
-        content: imageBinaryData
+        content: sampleBinaryData
     };
 
     ai:ImageDocument img2 = {
-        content: imageBinaryData,
+        content: sampleBinaryData,
         metadata: {
             mimeType: "image/png"
         }
@@ -112,6 +112,66 @@ function testGenerateMethodWithImageDocumentWithUrl() returns ai:Error? {
 }
 
 @test:Config
+function testFileDocument() returns ai:Error? {
+    ai:FileDocument pdf = {
+        metadata: {
+            mimeType: "application/pdf"
+        },
+        content: sampleBinaryData
+    };
+
+    ai:FileDocument pdf2 = {
+        content: sampleBinaryData
+    };
+
+    ai:FileDocument pdf3 = {
+        content: "https://sampleurl.com"
+    };
+
+    ai:FileDocument pdf4 = {
+        content: "<invalid-url>"
+    };
+
+    ai:FileDocument pdf5 = {
+        content: {fileId: "<file-id>"}
+    };
+
+    string|error description = claudeProvider->generate(`Describe the following pdf content. ${pdf}.`);
+    test:assertEquals(description, "This is a sample pdf description.");
+
+    string[]|error descriptions = claudeProvider->generate(`Describe the following pdf files. ${<ai:FileDocument[]>[pdf, pdf3]}.`);
+    test:assertEquals(descriptions, ["This is a sample pdf description.", "This is a sample pdf description."]);
+
+    description = claudeProvider->generate(`Describe the following pdf file. ${pdf5}.`);
+    test:assertEquals(description, "This is a sample pdf description.");
+
+    description = claudeProvider->generate(`Describe the following pdf file. ${pdf2}.`);
+    if description is string {
+        test:assertFail("Expected an error for missing mimeType in the file document.");
+    }
+    test:assertEquals(description.message(), "Please specify the mimeType for the file document.");
+
+    description = claudeProvider->generate(`Describe the following pdf file. ${pdf4}.`);
+    if description is string {
+        test:assertFail("Expected an error for invalid URL in the file document.");
+    }
+    test:assertEquals(description.message(), "Must be a valid URL.");
+}
+
+@test:Config
+function testUnsupportedAudioDocument() returns ai:Error? {
+    ai:AudioDocument audioDoc = {
+        content: sampleBinaryData
+    };
+
+    string|ai:Error description = claudeProvider->generate(`Describe the following audio file. ${audioDoc}.`);
+    if description is string {
+        test:assertFail("Expected an error for unsupported document in the file document.");
+    }
+    test:assertEquals(description.message(), "Only text, image and file documents are supported.");
+}
+
+@test:Config
 function testGenerateMethodWithImageDocumentWithInvalidUrl() returns ai:Error? {
     ai:ImageDocument img = {
         content: "This-is-not-a-valid-url"
@@ -129,7 +189,7 @@ function testGenerateMethodWithImageDocumentWithInvalidUrl() returns ai:Error? {
 @test:Config
 function testGenerateMethodWithImageDocumentArray() returns ai:Error? {
     ai:ImageDocument img = {
-        content: imageBinaryData,
+        content: sampleBinaryData,
         metadata: {
             mimeType: "image/png"
         }
@@ -146,7 +206,7 @@ function testGenerateMethodWithImageDocumentArray() returns ai:Error? {
 @test:Config
 function testGenerateMethodWithTextAndImageDocumentArray() returns ai:Error? {
     ai:ImageDocument img = {
-        content: imageBinaryData,
+        content: sampleBinaryData,
         metadata: {
             mimeType: "image/png"
         }
@@ -163,7 +223,7 @@ function testGenerateMethodWithTextAndImageDocumentArray() returns ai:Error? {
 @test:Config
 function testGenerateMethodWithImageDocumentsandTextDocuments() returns ai:Error? {
     ai:ImageDocument img = {
-        content: imageBinaryData,
+        content: sampleBinaryData,
         metadata: {
             mimeType: "image/png"
         }
@@ -186,7 +246,7 @@ function testGenerateMethodWithUnsupportedDocument() returns ai:Error? {
 
     string[]|error descriptions = claudeProvider->generate(`What is the content in this document. ${doc}.`);
     test:assertTrue(descriptions is error);
-    test:assertTrue((<error>descriptions).message().includes("Only text and image documents are supported."));
+    test:assertTrue((<error>descriptions).message().includes("Only text, image and file documents are supported."));
 }
 
 @test:Config

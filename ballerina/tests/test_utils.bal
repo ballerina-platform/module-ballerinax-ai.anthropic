@@ -81,6 +81,18 @@ isolated function getExpectedParameterSchema(string message) returns map<json> {
         return expectedParameterSchemaStringForRateBlog8;
     }
 
+    if message.startsWith("Describe the following pdf content") {
+        return expectedParameterSchemaStringForRateBlog8;
+    }
+
+    if message.startsWith("Describe the following pdf files") {
+        return expectedParameterSchemaStringForRateBlog7;
+    }
+
+    if message.startsWith("Describe the following pdf file") {
+        return expectedParameterSchemaStringForRateBlog8;
+    }
+
     if message.startsWith("Please describe the image") {
         return expectedParameterSchemaStringForRateBlog8;
     }
@@ -186,6 +198,18 @@ isolated function getTheMockLLMResult(string message) returns map<json> {
         return {result: "This is a sample image description."};
     }
 
+    if message.startsWith("Describe the following pdf content") {
+        return {result: "This is a sample pdf description."};
+    }
+
+    if message.startsWith("Describe the following pdf files") {
+        return {result: ["This is a sample pdf description.", "This is a sample pdf description."]};
+    }
+
+    if message.startsWith("Describe the following pdf file") {
+        return {result: "This is a sample pdf description."};
+    }
+
     return {};
 }
 
@@ -249,7 +273,7 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
                 "source": {
                     "type": "base64",
                     "media_type": "image/png",
-                    "data": imageStr
+                    "data": sampleBase64Str
                 }
             },
             {
@@ -271,7 +295,7 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
                 "source": {
                     "type": "base64",
                     "media_type": "image/png",
-                    "data": imageStr
+                    "data": sampleBase64Str
                 }
             },
             {
@@ -290,7 +314,7 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
                 "source": {
                     "type": "base64",
                     "media_type": "image/png",
-                    "data": imageStr
+                    "data": sampleBase64Str
                 }
             },
             {
@@ -308,7 +332,7 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
                 "source": {
                     "type": "base64",
                     "media_type": "image/png",
-                    "data": imageStr
+                    "data": sampleBase64Str
                 }
             },
             {"type": "text", "text": "."}
@@ -337,6 +361,57 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
                 "source": {
                     "type": "url",
                     "data": "This-is-not-a-valid-url"
+                }
+            },
+            {"type": "text", "text": "."}
+        ];
+    }
+
+    if message.startsWith("Describe the following pdf content") {
+        return [
+            {"type": "text", "text": "Describe the following pdf content. "},
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": sampleBase64Str
+                }
+            },
+            {"type": "text", "text": "."}
+        ];
+    }
+
+    if message.startsWith("Describe the following pdf files") {
+        return [
+            {"type": "text", "text": "Describe the following pdf files. "},
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": sampleBase64Str
+                }
+            },
+            {
+                "type": "document",
+                "source": {
+                    "type": "url",
+                    "url": "https://sampleurl.com"
+                }
+            },
+            {"type": "text", "text": "."}
+        ];
+    }
+
+    if message.startsWith("Describe the following pdf file") {
+        return [
+            {"type": "text", "text": "Describe the following pdf file. "},
+            {
+                "type": "document",
+                "source": {
+                    "type": "file",
+                    "file_id": "<file-id>"
                 }
             },
             {"type": "text", "text": "."}

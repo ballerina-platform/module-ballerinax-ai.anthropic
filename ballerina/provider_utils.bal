@@ -173,7 +173,7 @@ isolated function addDocumentContentPart(ai:Document doc, DocumentContentPart[] 
     } else if doc is ai:FileDocument {
         return contentParts.push(check buildFileContentPart(doc));
     }
-    return error ai:Error("Only text and image documents are supported.");
+    return error ai:Error("Only text, image and file documents are supported.");
 }
 
 isolated function addTextContentPart(TextContentPart? contentPart, DocumentContentPart[] contentParts) {
