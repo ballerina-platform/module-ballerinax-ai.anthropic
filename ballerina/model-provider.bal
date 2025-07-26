@@ -138,7 +138,8 @@ public isolated client class ModelProvider {
     # + prompt - The prompt to use in the chat messages
     # + td - Type descriptor specifying the expected return type format
     # + return - Generates a value that belongs to the type, or an error if generation fails
-    isolated remote function generate(ai:Prompt prompt, typedesc<anydata> td = <>) returns td|ai:Error = @java:Method {
+    isolated remote function generate(ai:Prompt prompt, @display {label: "Expected type"} typedesc<anydata> td = <>) 
+                    returns td|ai:Error = @java:Method {
         'class: "io.ballerina.lib.ai.anthropic.Generator"
     } external;
 
