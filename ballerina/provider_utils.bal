@@ -15,12 +15,67 @@
 // under the License.
 
 import ballerina/ai;
+import ballerina/constraint;
 import ballerina/http;
+import ballerina/lang.array;
 
 type ResponseSchema record {|
     map<json> schema;
     boolean isOriginallyJsonObject = true;
 |};
+
+type TextContentPart record {|
+    readonly string 'type = "text";
+    string text;
+|};
+
+type ImageWithUrlContentPart record {|
+    readonly string 'type = "image";
+    record {|
+        readonly "url" 'type = "url";
+        ai:Url url;
+    |} 'source;
+|};
+
+type ImageWithBinaryDataContentPart record {|
+    readonly string 'type = "image";
+    record {|
+        readonly string 'type = "base64";
+        string media_type?;
+        string data;
+    |} 'source;
+|};
+
+type ImageContentPart ImageWithUrlContentPart|ImageWithBinaryDataContentPart;
+
+type FileWithUrlContentPart record {|
+    readonly string 'type = "document";
+    record {|
+        readonly "url" 'type = "url";
+        ai:Url url;
+    |} 'source;
+|};
+
+type FileWithBinaryDataContentPart record {|
+    readonly string 'type = "document";
+    record {|
+        readonly "base64" 'type = "base64";
+        string media_type;
+        string data;
+    |} 'source;
+|};
+
+type FileWithFileIdContentPart record {|
+    readonly string 'type = "document";
+    record {|
+        readonly "file" 'type = "file";
+        string file_id;
+    |} 'source;
+|};
+
+type FileContentPart FileWithUrlContentPart|FileWithBinaryDataContentPart|FileWithFileIdContentPart;
+
+type DocumentContentPart TextContentPart|ImageContentPart|FileContentPart;
 
 const JSON_CONVERSION_ERROR = "FromJsonStringError";
 const CONVERSION_ERROR = "ConversionError";
@@ -76,35 +131,137 @@ isolated function getExpectedResponseSchema(typedesc<anydata> expectedResponseTy
     return generateJsonObjectSchema(check generateJsonSchemaForTypedescAsJson(td));
 }
 
-isolated function generateChatCreationContent(ai:Prompt prompt) returns string|ai:Error {
+isolated function generateChatCreationContent(ai:Prompt prompt) returns DocumentContentPart[]|ai:Error {
     string[] & readonly strings = prompt.strings;
     anydata[] insertions = prompt.insertions;
-    string promptStr = strings[0];
+    DocumentContentPart[] contentParts = [];
+    string accumulatedTextContent = "";
+
+    if strings.length() > 0 {
+        accumulatedTextContent += strings[0];
+    }
+
     foreach int i in 0 ..< insertions.length() {
-        string str = strings[i + 1];
         anydata insertion = insertions[i];
-
-        if insertion is ai:TextDocument {
-            promptStr += insertion.content + " " + str;
-            continue;
-        }
-
-        if insertion is ai:TextDocument[] {
-            foreach ai:TextDocument doc in insertion {
-                promptStr += doc.content  + " ";
-                
-            }
-            promptStr += str;
-            continue;
-        }
+        string str = strings[i + 1];
 
         if insertion is ai:Document {
-            return error ai:Error("Only Text Documents are currently supported.");
+            addTextContentPart(buildTextContentPart(accumulatedTextContent), contentParts);
+            accumulatedTextContent = "";
+            check addDocumentContentPart(insertion, contentParts);
+        } else if insertion is ai:Document[] {
+            addTextContentPart(buildTextContentPart(accumulatedTextContent), contentParts);
+            accumulatedTextContent = "";
+            foreach ai:Document doc in insertion {
+                check addDocumentContentPart(doc, contentParts);
+            }
+        } else {
+            accumulatedTextContent += insertion.toString();
+        }
+        accumulatedTextContent += str;
+    }
+
+    addTextContentPart(buildTextContentPart(accumulatedTextContent), contentParts);
+    return contentParts;
+}
+
+isolated function addDocumentContentPart(ai:Document doc, DocumentContentPart[] contentParts) returns ai:Error? {
+    if doc is ai:TextDocument {
+        return addTextContentPart(buildTextContentPart(doc.content), contentParts);
+    } else if doc is ai:ImageDocument {
+        return contentParts.push(check buildImageContentPart(doc));
+    } else if doc is ai:FileDocument {
+        return contentParts.push(check buildFileContentPart(doc));
+    }
+    return error ai:Error("Only text, image and file documents are supported.");
+}
+
+isolated function addTextContentPart(TextContentPart? contentPart, DocumentContentPart[] contentParts) {
+    if contentPart is TextContentPart {
+        return contentParts.push(contentPart);
+    }
+}
+
+isolated function buildTextContentPart(string content) returns TextContentPart? {
+    if content.length() == 0 {
+        return;
+    }
+
+    return {
+        'type: "text",
+        text: content
+    };
+}
+
+isolated function buildImageContentPart(ai:ImageDocument doc) returns ImageContentPart|ai:Error {
+    ai:Url|byte[] content = doc.content;
+
+    if content is ai:Url {
+        ai:Url|constraint:Error validationRes = constraint:validate(content);
+        if validationRes is error {
+            return error(validationRes.message(), validationRes.cause());
+        }
+        return {
+            'source: {
+                url: content
+            }
+        };
+    }
+
+    string? mimeType = doc.metadata?.mimeType;
+    if mimeType is () {
+        return error("Please specify the mimeType for the image document.");
+    }
+
+    return {
+            'source: {
+                media_type: mimeType,
+                data: check getBase64EncodedString(content)
+            }
+        };
+}
+
+isolated function buildFileContentPart(ai:FileDocument doc) returns FileContentPart|ai:Error {
+    byte[]|ai:Url|ai:FileId content = doc.content;
+    if content is ai:Url {
+        ai:Url|constraint:Error validationDoc = constraint:validate(content);
+        if validationDoc is error {
+            return error(validationDoc.message(), validationDoc.cause());
         }
 
-        promptStr += insertion.toString() + str;
+        return {
+            'source: {
+                url: content
+            }
+        };
+    } else if content is ai:FileId {
+        return {
+            'source: {
+                file_id: content.fileId
+            }
+        };
     }
-    return promptStr.trim();
+
+    string? mimeType = doc.metadata?.mimeType;
+    if mimeType is () {
+        return error("Please specify the mimeType for the file document.");
+    }
+    
+    return {
+        'source: {
+            media_type: mimeType,
+            data: check getBase64EncodedString(<byte[]>content)
+        }
+    };
+}
+
+isolated function getBase64EncodedString(byte[] content) returns string|ai:Error {
+    string|error binaryContent = array:toBase64(content);
+    if binaryContent is error {
+        return error("Failed to convert byte array to string: " + binaryContent.message() + ", " +
+                        binaryContent.detail().toBalString());
+    }
+    return binaryContent;
 }
 
 isolated function handleParseResponseError(error chatResponseError) returns error {
@@ -116,20 +273,23 @@ isolated function handleParseResponseError(error chatResponseError) returns erro
 }
 
 isolated function getGetResultsToolChoice() returns map<json> => {
-        'type: "tool",
-        name: GET_RESULTS_TOOL
-    };
+    'type: "tool",
+    name: GET_RESULTS_TOOL
+};
 
 isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|error =>
-    [{
+    [
+    {
         name: GET_RESULTS_TOOL,
         input_schema: check parameters.cloneWithType(),
         description: "Tool to call with the resp onse from a large language model (LLM) for a user prompt."
-    }];
+    }
+];
 
-isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType, 
-            int maxTokens, decimal temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc) returns anydata|ai:Error {
-    string chatContent = check generateChatCreationContent(prompt);
+isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType,
+        int maxTokens, decimal temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc)
+            returns anydata|ai:Error {
+    DocumentContentPart[] chatContent = check generateChatCreationContent(prompt);
     ResponseSchema ResponseSchema = check getExpectedResponseSchema(expectedResponseTypedesc);
     map<json>[]|error tools = getGetResultsTool(ResponseSchema.schema);
     if tools is error {
@@ -153,13 +313,14 @@ isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey
     map<string> headers = {
         "x-api-key": apiKey,
         "anthropic-version": ANTHROPIC_API_VERSION,
-        "content-type": "application/json"
+        "content-type": "application/json",
+        "anthropic-beta": "files-api-2025-04-14"
     };
 
     AnthropicApiResponse|error response =
         AnthropicClient->/messages.post(request, headers);
     if response is error {
-        return error("LLM call failed: " + response.message());
+        return error("LLM call failed: ", response);
     }
 
     ai:FunctionCall[] toolCalls = [];
