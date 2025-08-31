@@ -22,6 +22,7 @@ const DEFAULT_ANTHROPIC_SERVICE_URL = "https://api.anthropic.com/v1";
 const DEFAULT_MAX_TOKEN_COUNT = 512;
 const DEFAULT_TEMPERATURE = 0.7d;
 const ANTHROPIC_API_VERSION = "2023-06-01";
+const DEFAULT_GENERATOR_CONFIG = {};
 
 # Provider is a client class that provides an interface for interacting with Anthropic Large Language Models.
 public isolated client class ModelProvider {
@@ -31,6 +32,7 @@ public isolated client class ModelProvider {
     private final string modelType;
     private final int maxTokens;
     private final decimal temperature;
+    private final readonly & ai:GeneratorConfig generatorConfig;
 
     # Initializes the Anthropic model with the given connection configuration and model configuration.
     #
@@ -47,6 +49,8 @@ public isolated client class ModelProvider {
             @display {label: "Service URL"} string serviceUrl = DEFAULT_ANTHROPIC_SERVICE_URL,
             @display {label: "Maximum Tokens"} int maxTokens = DEFAULT_MAX_TOKEN_COUNT,
             @display {label: "Temperature"} decimal temperature = DEFAULT_TEMPERATURE,
+            @display {label: "Generator Configuration"} 
+            readonly & ai:GeneratorConfig generatorConfig = DEFAULT_GENERATOR_CONFIG,
             @display {label: "Connection Configuration"} *ConnectionConfig connectionConfig) returns ai:Error? {
 
         // Convert ConnectionConfig to http:ClientConfiguration
@@ -77,6 +81,7 @@ public isolated client class ModelProvider {
         self.modelType = modelType;
         self.maxTokens = maxTokens;
         self.temperature = temperature;
+        self.generatorConfig = generatorConfig;
     }
 
     # Uses Anthropic API to generate a response
@@ -222,7 +227,7 @@ isolated function mapContentToFunctionCall(ContentBlock block) returns ai:Functi
     if arguments is error {
         return error ai:LlmError("Invalid or malformed arguments received in function call response.", arguments);
     }
-    return {name: blockName, arguments};
+    return {name: blockName, arguments, id: block?.id};
 }
 
 isolated function getChatMessageStringContent(ai:Prompt|string prompt) returns string|ai:Error {
