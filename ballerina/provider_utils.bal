@@ -347,7 +347,7 @@ isolated function getLlmResponseWithRetries(http:Client anthropicClient, map<jso
     ai:FunctionCall toolCall = toolCalls[0];
     map<json>? arguments = toolCall.arguments;
 
-    json[]|error history = request.get("messages").ensureType();
+    json[]|error history = request["messages"].ensureType();
     if history is error {
         return error("Failed to retrieve message history: " + history.message());
     }
