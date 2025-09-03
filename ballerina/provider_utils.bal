@@ -18,6 +18,7 @@ import ballerina/ai;
 import ballerina/constraint;
 import ballerina/http;
 import ballerina/lang.array;
+import ballerina/lang.runtime;
 
 type ResponseSchema record {|
     map<json> schema;
@@ -286,12 +287,13 @@ isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|er
     }
 ];
 
-isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType,
-        int maxTokens, decimal temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc)
-            returns anydata|ai:Error {
+isolated function generateLlmResponse(http:Client anthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType,
+        int maxTokens, decimal temperature, ai:GeneratorConfig generatorConfig, ai:Prompt prompt,
+        typedesc<json> expectedResponseTypedesc) returns anydata|ai:Error {
+
     DocumentContentPart[] chatContent = check generateChatCreationContent(prompt);
-    ResponseSchema ResponseSchema = check getExpectedResponseSchema(expectedResponseTypedesc);
-    map<json>[]|error tools = getGetResultsTool(ResponseSchema.schema);
+    ResponseSchema responseSchema = check getExpectedResponseSchema(expectedResponseTypedesc);
+    map<json>[]|error tools = getGetResultsTool(responseSchema.schema);
     if tools is error {
         return error("Error in generated schema: " + tools.message());
     }
@@ -317,16 +319,23 @@ isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey
         "anthropic-beta": "files-api-2025-04-14"
     };
 
-    AnthropicApiResponse|error response =
-        AnthropicClient->/messages.post(request, headers);
+    [int, decimal] [count, interval] = check getRetryConfigValues(generatorConfig);
+    return getLlmResponseWithRetries(anthropicClient, request, headers, expectedResponseTypedesc,
+                                     responseSchema.isOriginallyJsonObject, count, interval);
+}
+
+isolated function getLlmResponseWithRetries(http:Client anthropicClient, map<json> request, map<string> headers,
+        typedesc<json> expectedResponseTypedesc, boolean isOriginallyJsonObject, int retryCount,
+        decimal retryInterval) returns anydata|ai:Error {
+
+    AnthropicApiResponse|error response = anthropicClient->/messages.post(request, headers);
     if response is error {
         return error("LLM call failed: ", response);
     }
 
     ai:FunctionCall[] toolCalls = [];
     foreach ContentBlock block in response.content {
-        string blockType = block.'type;
-        if blockType == "tool_use" {
+        if block.'type == "tool_use" {
             toolCalls.push(check mapContentToFunctionCall(block));
         }
     }
@@ -335,25 +344,78 @@ isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey
         return error(NO_RELEVANT_RESPONSE_FROM_THE_LLM);
     }
 
-    ai:FunctionCall tool = toolCalls[0];
-    map<json>? arguments = tool.arguments;
+    ai:FunctionCall toolCall = toolCalls[0];
+    map<json>? arguments = toolCall.arguments;
+
+    json[]|error history = request["messages"].ensureType();
+    if history is error {
+        return error("Failed to retrieve message history: " + history.message());
+    }
+
+    history.push({role: ai:ASSISTANT, content: response.content});
 
     if arguments is () {
         return error(NO_RELEVANT_RESPONSE_FROM_THE_LLM);
     }
 
-    anydata|error res = parseResponseAsType(arguments.toJsonString(), expectedResponseTypedesc,
-            ResponseSchema.isOriginallyJsonObject);
+    anydata|error result = handleResponseWithExpectedType(arguments, isOriginallyJsonObject, expectedResponseTypedesc);
+
+    if result is error && retryCount > 0 {
+        string|error repairMessage = getRepairMessage(result, toolCall?.id, toolCall.name);
+        if repairMessage is error {
+            return error("Failed to generate a valid repair message: ", repairMessage);
+        }
+
+        history.push({role: ai:USER, content: repairMessage});
+        request["messages"] = history;
+        runtime:sleep(retryInterval);
+        return getLlmResponseWithRetries(anthropicClient, request, headers, expectedResponseTypedesc,
+                                         isOriginallyJsonObject, retryCount - 1, retryInterval);
+    }
+
+    if result is anydata {
+        return result;
+    }
+
+    return error ai:LlmInvalidGenerationError(string `Invalid value returned from the LLM Client, expected: '${
+            expectedResponseTypedesc.toBalString()}', found '${result.toBalString()}'`);
+}
+
+isolated function handleResponseWithExpectedType(map<json> arguments, boolean isOriginallyJsonObject,
+        typedesc<anydata> expectedResponseTypedesc) returns anydata|error {
+    anydata|error res = parseResponseAsType(arguments.toJsonString(), 
+        expectedResponseTypedesc, isOriginallyJsonObject);
     if res is error {
-        return error ai:LlmInvalidGenerationError(string `Invalid value returned from the LLM Client, expected: '${
-            expectedResponseTypedesc.toBalString()}', found '${res.toBalString()}'`);
+        return res;
+    }
+    return res.ensureType(expectedResponseTypedesc);
+}
+
+isolated function getRepairMessage(error e, string? toolId, string functionName) returns string|error {
+    error? cause = e.cause();
+    if cause is () {
+        return e;
     }
 
-    anydata|error result = res.ensureType(expectedResponseTypedesc);
-    if result is error {
-        return error ai:LlmInvalidGenerationError(string `Invalid value returned from the LLM Client, expected: '${
-            expectedResponseTypedesc.toBalString()}', found '${(typeof response).toBalString()}'`);
-    }
+    return string `The tool call with ${toolId != () ? string `ID '${toolId}' for the`: ""} function '${functionName}' failed.
+        Error: ${cause.toString()}
+        You must correct the function arguments based on this error and respond with a valid tool call.`;
+}
 
-    return result;
+isolated function getRetryConfigValues(ai:GeneratorConfig generatorConfig) returns [int, decimal]|ai:Error {
+    ai:RetryConfig? retryConfig = generatorConfig.retryConfig;
+    if retryConfig != () {
+        int count = retryConfig.count;
+        decimal? interval = retryConfig.interval;
+
+        if count < 0 {
+            return error("Invalid retry count: " + count.toString());
+        }
+        if interval < 0d {
+            return error("Invalid retry interval: " + interval.toString());
+        }
+
+        return [count, interval ?: 0d];
+    }
+    return [0, 0d];
 }
