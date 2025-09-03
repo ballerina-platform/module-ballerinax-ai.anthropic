@@ -34,7 +34,7 @@ isolated service /llm on new http:Listener(8080) {
         }
 
         check assertAnthropicMessages(messages, initialText, index);
-        return check getTestServiceResponse(initialText, index);
+        return getTestServiceResponse(initialText, index);
     }
 }
 
