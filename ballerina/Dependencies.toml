@@ -10,7 +10,7 @@ distribution-version = "2201.12.0"
 [[package]]
 org = "ballerina"
 name = "ai"
-version = "1.4.2"
+version = "1.5.4"
 dependencies = [
 	{org = "ballerina", name = "constraint"},
 	{org = "ballerina", name = "data.jsondata"},
@@ -73,7 +73,7 @@ modules = [
 [[package]]
 org = "ballerina"
 name = "crypto"
-version = "2.9.0"
+version = "2.9.1"
 dependencies = [
 	{org = "ballerina", name = "jballerina.java"},
 	{org = "ballerina", name = "time"}
@@ -82,7 +82,7 @@ dependencies = [
 [[package]]
 org = "ballerina"
 name = "data.jsondata"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
 	{org = "ballerina", name = "jballerina.java"},
 	{org = "ballerina", name = "lang.object"}
@@ -111,7 +111,7 @@ dependencies = [
 [[package]]
 org = "ballerina"
 name = "http"
-version = "2.14.4"
+version = "2.14.6"
 dependencies = [
 	{org = "ballerina", name = "auth"},
 	{org = "ballerina", name = "cache"},
@@ -161,7 +161,7 @@ modules = [
 [[package]]
 org = "ballerina"
 name = "jwt"
-version = "2.15.0"
+version = "2.15.1"
 dependencies = [
 	{org = "ballerina", name = "cache"},
 	{org = "ballerina", name = "crypto"},
@@ -265,7 +265,7 @@ dependencies = [
 [[package]]
 org = "ballerina"
 name = "log"
-version = "2.12.0"
+version = "2.13.0"
 dependencies = [
 	{org = "ballerina", name = "io"},
 	{org = "ballerina", name = "jballerina.java"},
@@ -281,7 +281,7 @@ version = "1.2.0"
 [[package]]
 org = "ballerina"
 name = "mcp"
-version = "0.9.1"
+version = "1.0.0"
 dependencies = [
 	{org = "ballerina", name = "http"},
 	{org = "ballerina", name = "jballerina.java"},
@@ -323,7 +323,7 @@ dependencies = [
 [[package]]
 org = "ballerina"
 name = "os"
-version = "1.10.0"
+version = "1.10.1"
 dependencies = [
 	{org = "ballerina", name = "io"},
 	{org = "ballerina", name = "jballerina.java"}
@@ -395,7 +395,7 @@ dependencies = [
 [[package]]
 org = "ballerinax"
 name = "ai.anthropic"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
 	{org = "ballerina", name = "ai"},
 	{org = "ballerina", name = "constraint"},
