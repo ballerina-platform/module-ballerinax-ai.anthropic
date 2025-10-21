@@ -17,3 +17,9 @@ groupId = "io.ballerina.lib"
 artifactId = "ai.anthropic-native"
 version = "1.1.2"
 path = "../native/build/libs/ai.anthropic-native-1.1.2-SNAPSHOT.jar"
+
+[[dependency]]
+org="ballerina"
+name="ai"
+version="1.6.0"
+repository="local"
