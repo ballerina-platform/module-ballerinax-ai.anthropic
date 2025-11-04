@@ -15,6 +15,7 @@
 // under the License.
 
 import ballerina/ai;
+import ballerina/ai.observe;
 import ballerina/http;
 import ballerina/jballerina.java;
 
@@ -86,9 +87,20 @@ public isolated client class ModelProvider {
     # + return - Chat response or an error in case of failures
     isolated remote function chat(ai:ChatMessage[]|ai:ChatUserMessage messages, ai:ChatCompletionFunctions[] tools = [], string? stop = ())
         returns ai:ChatAssistantMessage|ai:Error {
+        observe:ChatSpan span = observe:createChatSpan(self.modelType);
+        span.addProvider("anthropic");
+        span.addTemperature(self.temperature);
+        json|ai:Error inputMessage = convertMessageToJson(messages);
+        if inputMessage is json {
+            span.addInputMessages(inputMessage);
+        }
 
         // Map messages to Anthropic format
-        AnthropicMessage[] anthropicMessages = check self.mapToAnthropicMessages(messages);
+        AnthropicMessage[]|ai:Error anthropicMessages = self.mapToAnthropicMessages(messages);
+        if anthropicMessages is ai:Error {
+            span.close(anthropicMessages);
+            return anthropicMessages;
+        }
 
         // Prepare request payload
         map<json> requestPayload = {
@@ -99,11 +111,13 @@ public isolated client class ModelProvider {
         };
 
         if stop is string {
+            span.addStopSequence(stop);
             requestPayload["stop_sequences"] = [stop];
         }
 
         // If tools are provided, add them to the request
         if tools.length() > 0 {
+            span.addTools(tools);
             requestPayload["tools"] = self.mapToAnthropicTools(tools);
         }
 
@@ -116,9 +130,28 @@ public isolated client class ModelProvider {
 
         AnthropicApiResponse|error anthropicResponse = self.AnthropicClient->/messages.post(requestPayload, headers);
         if anthropicResponse is error {
-            return error ai:LlmInvalidResponseError("Unexpected response format from Anthropic API", anthropicResponse);
+            ai:Error err = error ai:LlmInvalidResponseError("Unexpected response format from Anthropic API", anthropicResponse);
+            span.close(err);
+            return err;
         }
 
+        span.addResponseId(anthropicResponse.id);
+        span.addInputTokenCount(anthropicResponse.usage.input_tokens);
+        span.addOutputTokenCount(anthropicResponse.usage.output_tokens);
+        span.addFinishReason(anthropicResponse.stop_reason);
+
+        ai:ChatAssistantMessage|ai:Error response = self.getAssistantMessage(anthropicResponse);
+        if response is ai:Error {
+            span.close(response);
+            return response;
+        }
+        span.addOutputMessages(response);
+        span.addOutputType(observe:TEXT);
+        span.close();
+        return response;
+    }
+
+    private isolated function getAssistantMessage(AnthropicApiResponse anthropicResponse) returns ai:ChatAssistantMessage|ai:Error {
         string? content = ();
         ai:FunctionCall[] toolCalls = [];
         foreach ContentBlock block in anthropicResponse.content {
@@ -134,11 +167,11 @@ public isolated client class ModelProvider {
 
     # Sends a chat request to the model and generates a value that belongs to the type
     # corresponding to the type descriptor argument.
-    # 
+    #
     # + prompt - The prompt to use in the chat messages
     # + td - Type descriptor specifying the expected return type format
     # + return - Generates a value that belongs to the type, or an error if generation fails
-    isolated remote function generate(ai:Prompt prompt, @display {label: "Expected type"} typedesc<anydata> td = <>) 
+    isolated remote function generate(ai:Prompt prompt, @display {label: "Expected type"} typedesc<anydata> td = <>)
                     returns td|ai:Error = @java:Method {
         'class: "io.ballerina.lib.ai.anthropic.Generator"
     } external;
@@ -264,4 +297,15 @@ isolated function getChatMessageStringContent(ai:Prompt|string prompt) returns s
         promptStr += insertion.toString() + str;
     }
     return promptStr.trim();
+}
+
+isolated function convertMessageToJson(ai:ChatMessage[]|ai:ChatMessage messages) returns json|ai:Error {
+    if messages is ai:ChatMessage[] {
+        return messages.'map(msg => msg is ai:ChatUserMessage|ai:ChatSystemMessage ? check convertMessageToJson(msg) : msg);
+    }
+    if messages is ai:ChatUserMessage|ai:ChatSystemMessage {
+
+    }
+    return messages !is ai:ChatUserMessage|ai:ChatSystemMessage ? messages :
+        {role: messages.role, content: check getChatMessageStringContent(messages.content), name: messages.name};
 }

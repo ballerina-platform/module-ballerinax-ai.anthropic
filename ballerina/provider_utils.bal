@@ -15,6 +15,7 @@
 // under the License.
 
 import ballerina/ai;
+import ballerina/ai.observe;
 import ballerina/constraint;
 import ballerina/http;
 import ballerina/lang.array;
@@ -214,11 +215,11 @@ isolated function buildImageContentPart(ai:ImageDocument doc) returns ImageConte
     }
 
     return {
-            'source: {
-                media_type: mimeType,
-                data: check getBase64EncodedString(content)
-            }
-        };
+        'source: {
+            media_type: mimeType,
+            data: check getBase64EncodedString(content)
+        }
+    };
 }
 
 isolated function buildFileContentPart(ai:FileDocument doc) returns FileContentPart|ai:Error {
@@ -246,7 +247,7 @@ isolated function buildFileContentPart(ai:FileDocument doc) returns FileContentP
     if mimeType is () {
         return error("Please specify the mimeType for the file document.");
     }
-    
+
     return {
         'source: {
             media_type: mimeType,
@@ -277,32 +278,43 @@ isolated function getGetResultsToolChoice() returns map<json> => {
     name: GET_RESULTS_TOOL
 };
 
-isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|error =>
-    [
-    {
-        name: GET_RESULTS_TOOL,
-        input_schema: check parameters.cloneWithType(),
-        description: "Tool to call with the resp onse from a large language model (LLM) for a user prompt."
+isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|ai:Error {
+    json|error toolParams = parameters.cloneWithType();
+    if toolParams is error {
+        return error("Error in generated schema: " + toolParams.message());
     }
-];
+    return [
+        {
+            name: GET_RESULTS_TOOL,
+            input_schema: toolParams,
+            description: "Tool to call with the resp onse from a large language model (LLM) for a user prompt."
+        }
+    ];
+}
 
-isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType,
+isolated function generateLlmResponse(http:Client anthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType,
         int maxTokens, decimal temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc)
             returns anydata|ai:Error {
-    DocumentContentPart[] chatContent = check generateChatCreationContent(prompt);
-    ResponseSchema ResponseSchema = check getExpectedResponseSchema(expectedResponseTypedesc);
-    map<json>[]|error tools = getGetResultsTool(ResponseSchema.schema);
-    if tools is error {
-        return error("Error in generated schema: " + tools.message());
+    observe:GenerateContentSpan span = observe:createGenerateContentSpan(modelType);
+    span.addProvider("anthropic");
+    span.addTemperature(temperature);
+
+    DocumentContentPart[] chatContent;
+    ResponseSchema responseSchema;
+    map<json>[] tools;
+    do {
+        chatContent = check generateChatCreationContent(prompt);
+        responseSchema = check getExpectedResponseSchema(expectedResponseTypedesc);
+        tools = check getGetResultsTool(responseSchema.schema);
+    } on fail ai:Error err {
+        span.close(err);
+        return err;
     }
 
+    map<json>[] messages = [{role: ai:USER, "content": chatContent}];
+    span.addInputMessages(messages);
     map<json> request = {
-        messages: [
-            {
-                role: ai:USER,
-                "content": chatContent
-            }
-        ],
+        messages,
         model: modelType,
         max_tokens: maxTokens,
         temperature,
@@ -317,43 +329,67 @@ isolated function generateLlmResponse(http:Client AnthropicClient, string apiKey
         "anthropic-beta": "files-api-2025-04-14"
     };
 
-    AnthropicApiResponse|error response =
-        AnthropicClient->/messages.post(request, headers);
+    AnthropicApiResponse|error response = anthropicClient->/messages.post(request, headers);
     if response is error {
-        return error("LLM call failed: ", response);
+        ai:Error err = error("LLM call failed: ", response);
+        span.close(err);
+        return err;
     }
 
-    ai:FunctionCall[] toolCalls = [];
-    foreach ContentBlock block in response.content {
-        string blockType = block.'type;
-        if blockType == "tool_use" {
-            toolCalls.push(check mapContentToFunctionCall(block));
-        }
+    span.addResponseId(response.id);
+    span.addInputTokenCount(response.usage.input_tokens);
+    span.addOutputTokenCount(response.usage.output_tokens);
+
+    ai:FunctionCall[]|ai:Error toolCalls = getFunctionCallFromContentBlocks(response.content);
+    if toolCalls is ai:Error {
+        span.close(toolCalls);
+        return toolCalls;
     }
 
     if toolCalls.length() == 0 {
-        return error(NO_RELEVANT_RESPONSE_FROM_THE_LLM);
+        ai:Error err = error(NO_RELEVANT_RESPONSE_FROM_THE_LLM);
+        span.close(err);
+        return err;
     }
 
     ai:FunctionCall tool = toolCalls[0];
     map<json>? arguments = tool.arguments;
-
     if arguments is () {
-        return error(NO_RELEVANT_RESPONSE_FROM_THE_LLM);
+        ai:Error err = error(NO_RELEVANT_RESPONSE_FROM_THE_LLM);
+        span.close(err);
+        return err;
     }
 
     anydata|error res = parseResponseAsType(arguments.toJsonString(), expectedResponseTypedesc,
-            ResponseSchema.isOriginallyJsonObject);
+            responseSchema.isOriginallyJsonObject);
     if res is error {
-        return error ai:LlmInvalidGenerationError(string `Invalid value returned from the LLM Client, expected: '${
+        ai:Error err = error ai:LlmInvalidGenerationError(string `Invalid value returned from the LLM Client, expected: '${
             expectedResponseTypedesc.toBalString()}', found '${res.toBalString()}'`);
+        span.close(err);
+        return err;
     }
 
     anydata|error result = res.ensureType(expectedResponseTypedesc);
     if result is error {
-        return error ai:LlmInvalidGenerationError(string `Invalid value returned from the LLM Client, expected: '${
+        ai:Error err = error ai:LlmInvalidGenerationError(string `Invalid value returned from the LLM Client, expected: '${
             expectedResponseTypedesc.toBalString()}', found '${(typeof response).toBalString()}'`);
+        span.close(err);
+        return err;
     }
 
+    span.addOutputMessages(result.toJson());
+    span.addOutputType(observe:JSON);
+    span.close();
     return result;
+}
+
+isolated function getFunctionCallFromContentBlocks(ContentBlock[] blocks) returns ai:FunctionCall[]|ai:Error {
+    ai:FunctionCall[] functionCalls = [];
+    foreach ContentBlock block in blocks {
+        string blockType = block.'type;
+        if blockType == "tool_use" {
+            functionCalls.push(check mapContentToFunctionCall(block));
+        }
+    }
+    return functionCalls;
 }
