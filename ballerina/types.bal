@@ -100,6 +100,67 @@ public enum ANTHROPIC_MODEL_NAMES {
     CLAUDE_3_HAIKU_20240307 = "claude-3-haiku-20240307"
 }
 
+const WEB_SEARCH_TOOL_NAME = "web_search";
+const CODE_EXECUTION_TOOL_NAME = "code_execution";
+const string DEFAULT_WEB_SEARCH_TOOL_TYPE = "web_search_20250305";
+const string DEFAULT_CODE_EXECUTION_TOOL_TYPE = "code_execution_20250825";
+
+# Approximate user location for localizing web search results.
+public type UserLocation record {|
+    # The city name (e.g., "San Francisco")
+    string city?;
+    # The region or state (e.g., "California")
+    string region?;
+    # The ISO country code (e.g., "US")
+    string country?;
+    # The IANA timezone ID (e.g., "America/Los_Angeles")
+    string timezone?;
+|};
+
+# Configuration for the Anthropic web search tool.
+# Ref: https://platform.claude.com/docs/en/docs/agents-and-tools/tool-use/web-search-tool
+public type WebSearchToolConfig record {|
+    # The web search tool version. Defaults to "web_search_20250305".
+    # Use "web_search_20260209" for dynamic filtering (requires code_execution tool + Opus/Sonnet 4.6).
+    string 'type = DEFAULT_WEB_SEARCH_TOOL_TYPE;
+    # Maximum number of web searches allowed per request
+    int max_uses?;
+    # Only include results from these domains (mutually exclusive with blocked_domains)
+    string[] allowed_domains?;
+    # Never include results from these domains (mutually exclusive with allowed_domains)
+    string[] blocked_domains?;
+    # Approximate user location for localizing search results
+    UserLocation user_location?;
+|};
+
+# Web search tool for Anthropic models.
+# Gives Claude access to real-time web content with cited sources.
+public type WebSearchTool record {|
+    # Name of the tool
+    "web_search" name = "web_search";
+    # Web search tool configurations
+    WebSearchToolConfig configurations?;
+|};
+
+# Configuration for the Anthropic code execution tool.
+# Ref: https://platform.claude.com/docs/en/docs/agents-and-tools/tool-use/code-execution-tool
+public type CodeExecutionToolConfig record {|
+    # The code execution tool version. Defaults to "code_execution_20250825".
+    # Versions: "code_execution_20250522" (legacy Python-only),
+    #           "code_execution_20250825" (Bash + file ops),
+    #           "code_execution_20260120" (REPL state persistence).
+    string 'type = DEFAULT_CODE_EXECUTION_TOOL_TYPE;
+|};
+
+# Code execution tool for Anthropic models.
+# Allows Claude to run code in a sandboxed environment.
+public type CodeExecutionTool record {|
+    # Name of the tool
+    "code_execution" name = "code_execution";
+    # Code execution tool configurations
+    CodeExecutionToolConfig configurations?;
+|};
+
 # Anthropic API request message format
 type AnthropicMessage record {|
     # Role of the participant in the conversation (e.g., "user" or "assistant")
