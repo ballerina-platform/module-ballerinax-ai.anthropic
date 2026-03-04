@@ -129,7 +129,7 @@ public isolated client class ModelProvider {
 
             // Validate inbuilt tools — only web_search and code_execution are supported
             foreach ai:InbuiltModelTool inbuiltTool in inbuiltTools {
-                if inbuiltTool.name != WEB_SEARCH_TOOL_NAME && inbuiltTool.name != CODE_EXECUTION_TOOL_NAME {
+                if inbuiltTool !is CodeExecutionTool && inbuiltTool !is WebSearchTool {
                     ai:Error err = error ai:Error(string `Unsupported inbuilt tool: '${inbuiltTool.name}'. `
                         + "The Anthropic model provider currently only supports 'web_search' and 'code_execution' inbuilt tools.");
                     span.close(err);
