@@ -14,6 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import ballerina/ai;
 import ballerina/http;
 
 # Configurations for controlling the behaviours when communicating with a remote HTTP endpoint.
@@ -135,8 +136,10 @@ public type WebSearchToolConfig record {|
 
 # Web search tool for Anthropic models.
 # Gives Claude access to real-time web content with cited sources.
+# Ref: https://platform.claude.com/docs/en/docs/agents-and-tools/tool-use/web-search-tool
 public type WebSearchTool record {|
-    # Name of the tool
+    *ai:BuiltInTool;
+    # Tool identifier. Always `"web_search"`.
     "web_search" name = "web_search";
     # Web search tool configurations
     WebSearchToolConfig configurations?;
@@ -154,8 +157,10 @@ public type CodeExecutionToolConfig record {|
 
 # Code execution tool for Anthropic models.
 # Allows Claude to run code in a sandboxed environment.
+# Ref: https://platform.claude.com/docs/en/docs/agents-and-tools/tool-use/code-execution-tool
 public type CodeExecutionTool record {|
-    # Name of the tool
+    *ai:BuiltInTool;
+    # Tool identifier. Always `"code_execution"`.
     "code_execution" name = "code_execution";
     # Code execution tool configurations
     CodeExecutionToolConfig configurations?;

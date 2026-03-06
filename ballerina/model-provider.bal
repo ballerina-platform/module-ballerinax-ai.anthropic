@@ -85,7 +85,7 @@ public isolated client class ModelProvider {
     # + tools - Tool definitions to be used for the tool call
     # + stop - Stop sequence to stop the completion (not used in this implementation)
     # + return - Chat response or an error in case of failures
-    isolated remote function chat(ai:ChatMessage[]|ai:ChatUserMessage messages, (ai:ChatCompletionFunctions|ai:InbuiltModelTool)[] tools = [], string? stop = ())
+    isolated remote function chat(ai:ChatMessage[]|ai:ChatUserMessage messages, (ai:ChatCompletionFunctions|ai:BuiltInTool)[] tools = [], string? stop = ())
         returns ai:ChatAssistantMessage|ai:Error {
         observe:ChatSpan span = observe:createChatSpan(self.modelType);
         span.addProvider("anthropic");
@@ -118,28 +118,28 @@ public isolated client class ModelProvider {
         // If tools are provided, add them to the request
         if tools.length() > 0 {
             ai:ChatCompletionFunctions[] functionTools = [];
-            ai:InbuiltModelTool[] inbuiltTools = [];
-            foreach ai:ChatCompletionFunctions|ai:InbuiltModelTool tool in tools {
+            ai:BuiltInTool[] builtInTools = [];
+            foreach ai:ChatCompletionFunctions|ai:BuiltInTool tool in tools {
                 if tool is ai:ChatCompletionFunctions {
                     functionTools.push(tool);
                 } else {
-                    inbuiltTools.push(tool);
+                    builtInTools.push(tool);
                 }
             }
 
-            // Validate inbuilt tools — only web_search and code_execution are supported
-            foreach ai:InbuiltModelTool inbuiltTool in inbuiltTools {
-                if inbuiltTool !is CodeExecutionTool && inbuiltTool !is WebSearchTool {
-                    ai:Error err = error ai:Error(string `Unsupported inbuilt tool: '${inbuiltTool.name}'. `
-                        + "The Anthropic model provider currently only supports 'web_search' and 'code_execution' inbuilt tools.");
+            // Validate built-in tools — only web_search and code_execution are supported
+            foreach ai:BuiltInTool builtInTool in builtInTools {
+                if builtInTool !is CodeExecutionTool && builtInTool !is WebSearchTool {
+                    ai:Error err = error ai:Error(string `Unsupported built-in tool: '${builtInTool.name}'. `
+                        + "The Anthropic model provider currently only supports 'web_search' and 'code_execution' built-in tools.");
                     span.close(err);
                     return err;
                 }
             }
 
             json[] toolsPayload = self.mapToAnthropicTools(functionTools);
-            foreach ai:InbuiltModelTool inbuiltTool in inbuiltTools {
-                toolsPayload.push(self.mapInbuiltToolToJson(inbuiltTool));
+            foreach ai:BuiltInTool builtInTool in builtInTools {
+                toolsPayload.push(self.mapBuiltInToolToJson(builtInTool));
             }
 
             span.addTools(toolsPayload);
@@ -263,11 +263,11 @@ public isolated client class ModelProvider {
         return anthropicTools;
     }
 
-    # Maps an inbuilt model tool to the Anthropic API JSON format
+    # Maps a built-in model tool to the Anthropic API JSON format
     #
-    # + tool - The inbuilt model tool to map
+    # + tool - The built-in model tool to map
     # + return - JSON representation for the Anthropic API tools array
-    private isolated function mapInbuiltToolToJson(ai:InbuiltModelTool tool) returns json {
+    private isolated function mapBuiltInToolToJson(ai:BuiltInTool tool) returns json {
         if tool.name == WEB_SEARCH_TOOL_NAME {
             return self.mapWebSearchToolToJson(tool);
         }
@@ -276,9 +276,9 @@ public isolated client class ModelProvider {
 
     # Maps a web search tool to the Anthropic API JSON format
     #
-    # + tool - The inbuilt model tool (expected to be a web search tool)
+    # + tool - The built-in model tool (expected to be a web search tool)
     # + return - JSON representation for the Anthropic API
-    private isolated function mapWebSearchToolToJson(ai:InbuiltModelTool tool) returns json {
+    private isolated function mapWebSearchToolToJson(ai:BuiltInTool tool) returns json {
         map<anydata>? configurations = tool.configurations;
 
         // Get version from configurations, or use default
@@ -332,9 +332,9 @@ public isolated client class ModelProvider {
 
     # Maps a code execution tool to the Anthropic API JSON format
     #
-    # + tool - The inbuilt model tool (expected to be a code execution tool)
+    # + tool - The built-in model tool (expected to be a code execution tool)
     # + return - JSON representation for the Anthropic API
-    private isolated function mapCodeExecutionToolToJson(ai:InbuiltModelTool tool) returns json {
+    private isolated function mapCodeExecutionToolToJson(ai:BuiltInTool tool) returns json {
         map<anydata>? configurations = tool.configurations;
 
         // Get version from configurations, or use default
