@@ -374,3 +374,36 @@ function testGenerateMethodWithArrayUnionRecord2() returns ai:Error? {
    Cricketers7[]|Cricketers8|error result = claudeProvider->generate(`Name a random world class cricketer`);
     test:assertTrue(result is Cricketers8);
 }
+
+// ===== Built-in tool tests =====
+
+@test:Config
+function testChatWithWebSearchTool() returns ai:Error? {
+    ai:ChatUserMessage userMsg = {role: "user", content: "Search for latest news"};
+    WebSearchTool webSearchTool = {
+        name: "web_search"
+    };
+    ai:ChatAssistantMessage result = check claudeProvider->chat(userMsg, [webSearchTool]);
+    test:assertTrue(result.content is string);
+}
+
+@test:Config
+function testChatWithCodeExecutionTool() returns ai:Error? {
+    ai:ChatUserMessage userMsg = {role: "user", content: "Run some code"};
+    CodeExecutionTool codeExecTool = {
+        name: "code_execution"
+    };
+    ai:ChatAssistantMessage result = check claudeProvider->chat(userMsg, [codeExecTool]);
+    test:assertTrue(result.content is string);
+}
+
+@test:Config
+function testChatWithUnsupportedBuiltInTool() returns error? {
+    ai:ChatUserMessage userMsg = {role: "user", content: "Use an unsupported tool"};
+    ai:BuiltInTool unsupportedTool = {name: "unsupported_tool"};
+    ai:ChatAssistantMessage|ai:Error result = claudeProvider->chat(userMsg, [unsupportedTool]);
+    test:assertTrue(result is ai:Error);
+    string errorMsg = (<ai:Error>result).message();
+    test:assertTrue(errorMsg.includes("Unsupported built-in tool: 'unsupported_tool'"),
+            string `expected unsupported built-in tool error, found: ${errorMsg}`);
+}

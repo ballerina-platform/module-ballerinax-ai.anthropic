@@ -139,7 +139,12 @@ public isolated client class ModelProvider {
 
             json[] toolsPayload = self.mapToAnthropicTools(functionTools);
             foreach ai:BuiltInTool builtInTool in builtInTools {
-                toolsPayload.push(self.mapBuiltInToolToJson(builtInTool));
+                json|ai:Error builtInToolJson = self.mapBuiltInToolToJson(builtInTool);
+                if builtInToolJson is ai:Error {
+                    span.close(builtInToolJson);
+                    return builtInToolJson;
+                }
+                toolsPayload.push(builtInToolJson);
             }
 
             span.addTools(toolsPayload);
@@ -266,8 +271,8 @@ public isolated client class ModelProvider {
     # Maps a built-in model tool to the Anthropic API JSON format
     #
     # + tool - The built-in model tool to map
-    # + return - JSON representation for the Anthropic API tools array
-    private isolated function mapBuiltInToolToJson(ai:BuiltInTool tool) returns json {
+    # + return - JSON representation for the Anthropic API tools array or an error
+    private isolated function mapBuiltInToolToJson(ai:BuiltInTool tool) returns json|ai:Error {
         if tool.name == WEB_SEARCH_TOOL_NAME {
             return self.mapWebSearchToolToJson(tool);
         }
@@ -277,8 +282,8 @@ public isolated client class ModelProvider {
     # Maps a web search tool to the Anthropic API JSON format
     #
     # + tool - The built-in model tool (expected to be a web search tool)
-    # + return - JSON representation for the Anthropic API
-    private isolated function mapWebSearchToolToJson(ai:BuiltInTool tool) returns json {
+    # + return - JSON representation for the Anthropic API or an error
+    private isolated function mapWebSearchToolToJson(ai:BuiltInTool tool) returns json|ai:Error {
         map<anydata>? configurations = tool.configurations;
 
         // Get version from configurations, or use default
@@ -299,10 +304,14 @@ public isolated client class ModelProvider {
             result["max_uses"] = maxUses;
         }
         anydata allowedDomains = configurations["allowed_domains"];
+        anydata blockedDomains = configurations["blocked_domains"];
+        if allowedDomains is string[] && blockedDomains is string[] {
+            return error ai:Error("'allowed_domains' and 'blocked_domains' are mutually exclusive in web search tool configuration");
+        }
+        
         if allowedDomains is string[] {
             result["allowed_domains"] = allowedDomains;
         }
-        anydata blockedDomains = configurations["blocked_domains"];
         if blockedDomains is string[] {
             result["blocked_domains"] = blockedDomains;
         }
