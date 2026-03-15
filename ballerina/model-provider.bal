@@ -85,7 +85,7 @@ public isolated client class ModelProvider {
     # + tools - Tool definitions to be used for the tool call
     # + stop - Stop sequence to stop the completion (not used in this implementation)
     # + return - Chat response or an error in case of failures
-    isolated remote function chat(ai:ChatMessage[]|ai:ChatUserMessage messages, ai:ChatCompletionFunctions[] tools = [], string? stop = ())
+    isolated remote function chat(ai:ChatMessage[]|ai:ChatUserMessage messages, (ai:ChatCompletionFunctions|ai:BuiltInTool)[] tools = [], string? stop = ())
         returns ai:ChatAssistantMessage|ai:Error {
         observe:ChatSpan span = observe:createChatSpan(self.modelType);
         span.addProvider("anthropic");
@@ -117,8 +117,38 @@ public isolated client class ModelProvider {
 
         // If tools are provided, add them to the request
         if tools.length() > 0 {
-            span.addTools(tools);
-            requestPayload["tools"] = self.mapToAnthropicTools(tools);
+            ai:ChatCompletionFunctions[] functionTools = [];
+            ai:BuiltInTool[] builtInTools = [];
+            foreach ai:ChatCompletionFunctions|ai:BuiltInTool tool in tools {
+                if tool is ai:ChatCompletionFunctions {
+                    functionTools.push(tool);
+                } else {
+                    builtInTools.push(tool);
+                }
+            }
+
+            // Validate built-in tools — only web_search and code_execution are supported
+            foreach ai:BuiltInTool builtInTool in builtInTools {
+                if builtInTool !is CodeExecutionTool && builtInTool !is WebSearchTool {
+                    ai:Error err = error ai:Error(string `Unsupported built-in tool: '${builtInTool.name}'. `
+                        + "The Anthropic model provider currently only supports 'web_search' and 'code_execution' built-in tools.");
+                    span.close(err);
+                    return err;
+                }
+            }
+
+            json[] toolsPayload = self.mapToAnthropicTools(functionTools);
+            foreach ai:BuiltInTool builtInTool in builtInTools {
+                json|ai:Error builtInToolJson = self.mapBuiltInToolToJson(builtInTool);
+                if builtInToolJson is ai:Error {
+                    span.close(builtInToolJson);
+                    return builtInToolJson;
+                }
+                toolsPayload.push(builtInToolJson);
+            }
+
+            span.addTools(toolsPayload);
+            requestPayload["tools"] = toolsPayload;
         }
 
         // Send request to Anthropic API with proper headers
@@ -224,24 +254,108 @@ public isolated client class ModelProvider {
     # Maps ai:ChatCompletionFunctions to Anthropic's tool format
     #
     # + tools - Array of tool definitions
-    # + return - Array of Anthropic tool definitions
-    private isolated function mapToAnthropicTools(ai:ChatCompletionFunctions[] tools) returns AnthropicTool[] {
-        AnthropicTool[] anthropicTools = [];
-
+    # + return - Array of Anthropic tool definitions as JSON
+    private isolated function mapToAnthropicTools(ai:ChatCompletionFunctions[] tools) returns json[] {
+        json[] anthropicTools = [];
         foreach ai:ChatCompletionFunctions tool in tools {
             map<json> schema = tool.parameters ?: {'type: "object", properties: {}};
-
-            // Create Anthropic tool with input_schema instead of parameters
-            AnthropicTool AnthropicTool = {
+            anthropicTools.push({
                 name: tool.name,
                 description: tool.description,
                 input_schema: schema
-            };
+            });
+        }
+        return anthropicTools;
+    }
 
-            anthropicTools.push(AnthropicTool);
+    # Maps a built-in model tool to the Anthropic API JSON format
+    #
+    # + tool - The built-in model tool to map
+    # + return - JSON representation for the Anthropic API tools array or an error
+    private isolated function mapBuiltInToolToJson(ai:BuiltInTool tool) returns json|ai:Error {
+        if tool.name == WEB_SEARCH_TOOL_NAME {
+            return self.mapWebSearchToolToJson(tool);
+        }
+        return self.mapCodeExecutionToolToJson(tool);
+    }
+
+    # Maps a web search tool to the Anthropic API JSON format
+    #
+    # + tool - The built-in model tool (expected to be a web search tool)
+    # + return - JSON representation for the Anthropic API or an error
+    private isolated function mapWebSearchToolToJson(ai:BuiltInTool tool) returns json|ai:Error {
+        map<anydata>? configurations = tool.configurations;
+
+        // Get version from configurations, or use default
+        string toolType = DEFAULT_WEB_SEARCH_TOOL_TYPE;
+        if configurations is map<anydata> {
+            anydata configType = configurations["type"];
+            if configType is string {
+                toolType = configType;
+            }
         }
 
-        return anthropicTools;
+        map<json> result = {"type": toolType, "name": WEB_SEARCH_TOOL_NAME};
+        if configurations is () {
+            return result;
+        }
+        anydata maxUses = configurations["max_uses"];
+        if maxUses is int {
+            result["max_uses"] = maxUses;
+        }
+        anydata allowedDomains = configurations["allowed_domains"];
+        anydata blockedDomains = configurations["blocked_domains"];
+        if allowedDomains is string[] && blockedDomains is string[] {
+            return error ai:Error("'allowed_domains' and 'blocked_domains' are mutually exclusive in web search tool configuration");
+        }
+        
+        if allowedDomains is string[] {
+            result["allowed_domains"] = allowedDomains;
+        }
+        if blockedDomains is string[] {
+            result["blocked_domains"] = blockedDomains;
+        }
+        anydata userLocation = configurations["user_location"];
+        if userLocation is map<anydata> {
+            map<json> location = {"type": "approximate"};
+            anydata city = userLocation["city"];
+            if city is string {
+                location["city"] = city;
+            }
+            anydata region = userLocation["region"];
+            if region is string {
+                location["region"] = region;
+            }
+            anydata country = userLocation["country"];
+            if country is string {
+                location["country"] = country;
+            }
+            anydata timezone = userLocation["timezone"];
+            if timezone is string {
+                location["timezone"] = timezone;
+            }
+            result["user_location"] = location;
+        }
+        return result;
+    }
+
+    # Maps a code execution tool to the Anthropic API JSON format
+    #
+    # + tool - The built-in model tool (expected to be a code execution tool)
+    # + return - JSON representation for the Anthropic API
+    private isolated function mapCodeExecutionToolToJson(ai:BuiltInTool tool) returns json {
+        map<anydata>? configurations = tool.configurations;
+
+        // Get version from configurations, or use default
+        string toolType = DEFAULT_CODE_EXECUTION_TOOL_TYPE;
+        if configurations is map<anydata> {
+            anydata configType = configurations["type"];
+            if configType is string {
+                toolType = configType;
+            }
+        }
+
+        return {"type": toolType, "name": CODE_EXECUTION_TOOL_NAME};
     }
 }
 
