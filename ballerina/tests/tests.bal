@@ -407,3 +407,110 @@ function testChatWithUnsupportedBuiltInTool() returns error? {
     test:assertTrue(errorMsg.includes("Unsupported built-in tool: 'unsupported_tool'"),
             string `expected unsupported built-in tool error, found: ${errorMsg}`);
 }
+
+@test:Config
+function testChatWithWebSearchToolAllowedDomains() returns ai:Error? {
+    ai:ChatUserMessage userMsg = {role: "user", content: "Search with allowed domains"};
+    WebSearchTool webSearchTool = {
+        name: "web_search",
+        configurations: {
+            allowed_domains: ["example.com", "test.org"]
+        }
+    };
+    ai:ChatAssistantMessage result = check claudeProvider->chat(userMsg, [webSearchTool]);
+    test:assertTrue(result.content is string);
+}
+
+@test:Config
+function testChatWithWebSearchToolBlockedDomains() returns ai:Error? {
+    ai:ChatUserMessage userMsg = {role: "user", content: "Search with blocked domains"};
+    WebSearchTool webSearchTool = {
+        name: "web_search",
+        configurations: {
+            blocked_domains: ["spam.com"]
+        }
+    };
+    ai:ChatAssistantMessage result = check claudeProvider->chat(userMsg, [webSearchTool]);
+    test:assertTrue(result.content is string);
+}
+
+@test:Config
+function testChatWithWebSearchToolMutualExclusionError() returns error? {
+    ai:ChatUserMessage userMsg = {role: "user", content: "Search with both domains"};
+    WebSearchTool webSearchTool = {
+        name: "web_search",
+        configurations: {
+            allowed_domains: ["example.com"],
+            blocked_domains: ["spam.com"]
+        }
+    };
+    ai:ChatAssistantMessage|ai:Error result = claudeProvider->chat(userMsg, [webSearchTool]);
+    test:assertTrue(result is ai:Error);
+    string errorMsg = (<ai:Error>result).message();
+    test:assertTrue(errorMsg.includes("mutually exclusive"),
+            string `expected mutual exclusion error, found: ${errorMsg}`);
+}
+
+@test:Config
+function testChatWithWebSearchToolUserLocation() returns ai:Error? {
+    ai:ChatUserMessage userMsg = {role: "user", content: "Search with location"};
+    WebSearchTool webSearchTool = {
+        name: "web_search",
+        configurations: {
+            user_location: {
+                city: "San Francisco",
+                region: "California",
+                country: "US",
+                timezone: "America/Los_Angeles"
+            }
+        }
+    };
+    ai:ChatAssistantMessage result = check claudeProvider->chat(userMsg, [webSearchTool]);
+    test:assertTrue(result.content is string);
+}
+
+@test:Config
+function testChatWithWebSearchToolMaxUses() returns ai:Error? {
+    ai:ChatUserMessage userMsg = {role: "user", content: "Search with max uses"};
+    WebSearchTool webSearchTool = {
+        name: "web_search",
+        configurations: {
+            max_uses: 3
+        }
+    };
+    ai:ChatAssistantMessage result = check claudeProvider->chat(userMsg, [webSearchTool]);
+    test:assertTrue(result.content is string);
+}
+
+@test:Config
+function testChatWithCodeExecutionToolCustomType() returns ai:Error? {
+    ai:ChatUserMessage userMsg = {role: "user", content: "Execute code custom type"};
+    CodeExecutionTool codeExecTool = {
+        name: "code_execution",
+        configurations: {
+            'type: "code_execution_20250522"
+        }
+    };
+    ai:ChatAssistantMessage result = check claudeProvider->chat(userMsg, [codeExecTool]);
+    test:assertTrue(result.content is string);
+}
+
+@test:Config
+function testChatWithMixedTools() returns ai:Error? {
+    ai:ChatUserMessage userMsg = {role: "user", content: "Mixed tools test"};
+    ai:ChatCompletionFunctions functionTool = {
+        name: "get_weather",
+        description: "Get weather for a city",
+        parameters: {
+            'type: "object",
+            properties: {
+                "city": {'type: "string"}
+            }
+        }
+    };
+    WebSearchTool webSearchTool = {
+        name: "web_search"
+    };
+    ai:ChatAssistantMessage result = check claudeProvider->chat(userMsg, [functionTool, webSearchTool]);
+    test:assertTrue(result.content is string);
+}
