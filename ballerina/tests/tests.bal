@@ -374,3 +374,18 @@ function testGenerateMethodWithArrayUnionRecord2() returns ai:Error? {
    Cricketers7[]|Cricketers8|error result = claudeProvider->generate(`Name a random world class cricketer`);
     test:assertTrue(result is Cricketers8);
 }
+
+ @test:Config
+function testGenerateMethodWithTextChunk() returns error? {
+    ai:TextChunk chunk = {
+        content: string `Title: ${blog1.title} Content: ${blog1.content}`
+    };
+    ai:TextChunk[] chunks = [chunk, chunk];
+    int maxScore = 10;
+
+    int rating = check claudeProvider->generate(`How would you rate this text chunk content out of ${maxScore}. ${chunk}.`);
+    test:assertEquals(rating, 4);
+
+    ReviewArray result = check claudeProvider->generate(`How would you rate these text chunks out of ${maxScore}. ${chunks}. Thank you!`);
+    test:assertEquals(result, [review, review]);
+}

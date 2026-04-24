@@ -49,6 +49,14 @@ isolated function getExpectedParameterSchema(string message) returns map<json> {
         return expectedParameterSchemaStringForRateBlog2;
     }
 
+    if message.startsWith("How would you rate these text chunks") {
+        return expectedParameterSchemaStringForRateBlog5;
+    }
+
+    if message.startsWith("How would you rate this text chunk") {
+        return expectedParameterSchemaStringForRateBlog;
+    }
+
     if message.startsWith("How would you rate this") {
         return expectedParameterSchemaStringForRateBlog;
     }
@@ -126,7 +134,7 @@ isolated function getExpectedParameterSchema(string message) returns map<json> {
     }
 
     if message.startsWith("Give me a random joke") {
-        return {"type":"object","properties":{"result":{"anyOf":[{"type":"string"},{"type":"null"}]}}};
+        return {"type": "object", "properties": {"result": {"anyOf": [{"type": "string"}, {"type": "null"}]}}};
     }
 
     if message.startsWith("Name a random world class cricketer in India") {
@@ -186,8 +194,15 @@ isolated function getTheMockLLMResult(string message) returns map<json> {
     }
 
     if message.startsWith("Who is a popular sportsperson") {
-        return {result: {firstName: "Simone", middleName: null, 
-            lastName: "Biles", yearOfBirth: 1997, sport: "Gymnastics"}};
+        return {
+            result: {
+                firstName: "Simone",
+                middleName: null,
+                lastName: "Biles",
+                yearOfBirth: 1997,
+                sport: "Gymnastics"
+            }
+        };
     }
 
     if message.startsWith("How would you rate these text blogs") {
@@ -196,6 +211,14 @@ isolated function getTheMockLLMResult(string message) returns map<json> {
 
     if message.startsWith("How would you rate this text blog") {
         return review;
+    }
+
+    if message.startsWith("How would you rate these text chunks") {
+        return {"result": [review, review]};
+    }
+
+    if message.startsWith("How would you rate this text chunk") {
+        return {result: 4};
     }
 
     if message.startsWith("How would you rate this") {
@@ -306,6 +329,14 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
 
     if message.startsWith("Please rate this blog") {
         return expectedContentPartsForRateBlog2;
+    }
+
+    if message.startsWith("How would you rate these text chunks") {
+        return expectedContentPartsForTextChunkArray;
+    }
+
+    if message.startsWith("How would you rate this text chunk") {
+        return expectedContentPartsForTextChunk;
     }
 
     if message.startsWith("What is") {

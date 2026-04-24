@@ -150,11 +150,9 @@ final readonly & map<anydata>[] expectedContentPartsForCountry = [
     {"type": "text", "text": "Which country is known as the pearl of the Indian Ocean?"}
 ];
 
-const expectedParameterSchemaStringForRateBlog =
-    {"type": "object", "properties": {"result": {"type": "integer"}}};
+const expectedParameterSchemaStringForRateBlog = {"type": "object", "properties": {"result": {"type": "integer"}}};
 
-const expectedParameterSchemaStringForRateBlog2 =
-    {
+const expectedParameterSchemaStringForRateBlog2 = {
     "type": "object",
     "required": ["comment", "rating"],
     "properties": {
@@ -163,11 +161,9 @@ const expectedParameterSchemaStringForRateBlog2 =
     }
 };
 
-const expectedParameterSchemaStringForRateBlog3 =
-    {"type": "object", "properties": {"result": {"type": "boolean"}}};
+const expectedParameterSchemaStringForRateBlog3 = {"type": "object", "properties": {"result": {"type": "boolean"}}};
 
-const expectedParameterSchemaStringForRateBlog4 =
-    {
+const expectedParameterSchemaStringForRateBlog4 = {
     "type": "object",
     "properties": {
         "result": {
@@ -181,8 +177,7 @@ const expectedParameterSchemaStringForRateBlog4 =
     }
 };
 
-const expectedParameterSchemaStringForRateBlog5 =
-    {
+const expectedParameterSchemaStringForRateBlog5 = {
     "type": "object",
     "properties": {
         "result": {
@@ -199,8 +194,7 @@ const expectedParameterSchemaStringForRateBlog5 =
     }
 };
 
-const expectedParameterSchemaStringForRateBlog6 =
-    {
+const expectedParameterSchemaStringForRateBlog6 = {
     "type": "object",
     "properties": {
         "result": {
@@ -212,8 +206,7 @@ const expectedParameterSchemaStringForRateBlog6 =
     }
 };
 
-const expectedParameterSchemaStringForRateBlog7 =
-    {
+const expectedParameterSchemaStringForRateBlog7 = {
     "type": "object",
     "properties": {
         "result": {
@@ -225,14 +218,11 @@ const expectedParameterSchemaStringForRateBlog7 =
     }
 };
 
-const expectedParameterSchemaStringForRateBlog8 =
-    {"type": "object", "properties": {"result": {"type": "string"}}};
+const expectedParameterSchemaStringForRateBlog8 = {"type": "object", "properties": {"result": {"type": "string"}}};
 
-const expectedParamterSchemaStringForCountry =
-    {"type": "object", "properties": {"result": {"type": "string"}}};
+const expectedParamterSchemaStringForCountry = {"type": "object", "properties": {"result": {"type": "string"}}};
 
-const expectedParamSchemaForArrayUnionNull =
-    {
+const expectedParamSchemaForArrayUnionNull = {
         "type": "object",
         "properties": {
             "result": {
@@ -259,8 +249,7 @@ const expectedParamSchemaForArrayUnionNull =
         }
     };
 
-const expectedParameterSchemaForArrayUnionRec =
-    {
+const expectedParameterSchemaForArrayUnionRec = {
         "type": "object",
         "properties": {
             "result": {
@@ -295,8 +284,7 @@ const expectedParameterSchemaForArrayUnionRec =
         }
     };
 
-const expectedParameterSchemaForArrayUnionBasicType =
-    {
+const expectedParameterSchemaForArrayUnionBasicType = {
         "type": "object",
         "properties": {
             "result": {
@@ -323,8 +311,7 @@ const expectedParameterSchemaForArrayUnionBasicType =
         }
     };
 
-const expectedParameterSchemaForArrayOnly =
-    {
+const expectedParameterSchemaForArrayOnly = {
         "type": "object",
         "properties": {
             "result": {
@@ -344,8 +331,7 @@ const expectedParameterSchemaForArrayOnly =
         }
     };
 
-const expectedParameterSchemaForRecUnionBasicType =
-    {
+const expectedParameterSchemaForRecUnionBasicType = {
         "type": "object",
         "properties": {
             "result": {
@@ -369,8 +355,7 @@ const expectedParameterSchemaForRecUnionBasicType =
         }
     };
 
-const expectedParameterSchemaForRecUnionNull =
-    {
+const expectedParameterSchemaForRecUnionNull = {
         "type": "object",
         "properties": {
             "result": {
@@ -393,3 +378,36 @@ const expectedParameterSchemaForRecUnionNull =
             }
         }
     };
+
+
+final readonly & map<anydata>[] expectedContentPartsForTextChunk = [
+    {"type": "text", "text": "How would you rate this text chunk content out of 10. "},
+    {
+        "type": "text",
+        "text": "Title: Tips for Growing a Beautiful Garden Content: " +
+        "Spring is the perfect time to start your garden. \n        Begin by preparing your soil with " +
+        "organic compost and ensure proper drainage. \n        Choose plants suitable for your climate zone, " +
+        "and remember to water them regularly. \n        Don't forget to mulch to retain moisture and prevent weeds."
+    },
+    {"type": "text", "text": "."}
+];
+
+final readonly & map<anydata>[] expectedContentPartsForTextChunkArray = [
+    {"type": "text", "text": "How would you rate these text chunks out of 10. "},
+    {
+        "type": "text",
+        "text": "Title: Tips for Growing a Beautiful Garden Content: " +
+        "Spring is the perfect time to start your garden. \n        Begin by preparing your soil with " +
+        "organic compost and ensure proper drainage. \n        Choose plants suitable for your climate zone, " +
+        "and remember to water them regularly. \n        Don't forget to mulch to retain moisture and prevent weeds."
+    },
+    {
+        "type": "text",
+        "text": "Title: Tips for Growing a Beautiful Garden Content: " +
+        "Spring is the perfect time to start your garden. \n        " +
+        "Begin by preparing your soil with organic compost and ensure proper drainage. \n        " +
+        "Choose plants suitable for your climate zone, and remember to water them regularly. \n        " +
+        "Don't forget to mulch to retain moisture and prevent weeds."
+    },
+    {"type": "text", "text": ". Thank you!"}
+];
