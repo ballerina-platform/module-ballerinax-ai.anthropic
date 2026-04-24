@@ -80,6 +80,15 @@ public type ConnectionConfig record {|
 # Models types for Anthropic
 @display {label: "Anthropic Model Names"}
 public enum ANTHROPIC_MODEL_NAMES {
+    CLAUDE_SONNET_4_5 = "claude-sonnet-4-5",
+    CLAUDE_SONNET_4_5_20250929 = "claude-sonnet-4-5-20250929",
+    CLAUDE_HAIKU_4_5 = "claude-haiku-4-5",
+    CLAUDE_HAIKU_4_5_20251001 = "claude-haiku-4-5-20251001",
+    CLAUDE_OPUS_4_5 = "claude-opus-4-5",
+    CLAUDE_OPUS_4_5_20251101 = "claude-opus-4-5-20251101",
+    CLAUDE_OPUS_4_6 = "claude-opus-4-6",
+    CLAUDE_SONNET_4_6 = "claude-sonnet-4-6",
+    CLAUDE_OPUS_4_1_20250805 = "claude-opus-4-1-20250805",
     CLAUDE_OPUS_4_20250514 = "claude-opus-4-20250514",
     CLAUDE_SONNET_4_20250514 = "claude-sonnet-4-20250514",
     CLAUDE_3_7_SONNET_20250219 = "claude-3-7-sonnet-20250219",
@@ -120,7 +129,7 @@ type AnthropicApiResponse record {
 };
 
 # Content block in Anthropic API response
-type ContentBlock record {|
+type ContentBlock record {
     # The type of content (e.g., "text" or "tool_use")
     string 'type;
     # The actual text content (for text type)
@@ -131,7 +140,7 @@ type ContentBlock record {|
     string name?;
     # Input parameters for the tool
     json input?;
-|};
+};
 
 # Usage statistics in Anthropic API response
 type Usage record {

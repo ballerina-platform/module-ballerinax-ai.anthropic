@@ -1,6 +1,15 @@
 ## Overview
 
-This module offers APIs for connecting with Anthropic Large Language Models (LLM).
+Anthropic provides high-performance, safe, and reliable large language models (LLMs).
+
+The Anthropic connector offers APIs for connecting with Anthropic LLMs, enabling the integration of advanced conversational AI and language processing capabilities into applications.
+
+### Key Features
+
+- Connect and interact with Anthropic Large Language Models (LLMs)
+- Support for Claude 3.5 Sonnet, Claude 3 Opus, and other Claude models
+- Efficient handling of conversational prompts and responses
+- Secure communication with API key authentication
 
 ## Prerequisites
 
