@@ -20,7 +20,7 @@ import ballerina/http;
 import ballerina/jballerina.java;
 
 const DEFAULT_ANTHROPIC_SERVICE_URL = "https://api.anthropic.com/v1";
-const DEFAULT_MAX_TOKEN_COUNT = 512;
+const DEFAULT_MAX_TOKEN_COUNT = 4096;
 const DEFAULT_TEMPERATURE = 0.7d;
 const ANTHROPIC_API_VERSION = "2023-06-01";
 
