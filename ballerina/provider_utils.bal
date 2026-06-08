@@ -313,14 +313,19 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
 
     map<json>[] messages = [{role: ai:USER, "content": chatContent}];
     span.addInputMessages(messages);
+
     map<json> request = {
         messages,
         model: modelType,
         max_tokens: maxTokens,
-        temperature,
         tools,
         tool_choice: getGetResultsToolChoice()
     };
+
+    // Add temperature only if the model is not Claude Opus 4.7 or 4.8
+    if modelType != CLAUDE_OPUS_4_7 && modelType != CLAUDE_OPUS_4_8 {
+        request["temperature"] = temperature;
+    }
 
     map<string> headers = {
         "x-api-key": apiKey,

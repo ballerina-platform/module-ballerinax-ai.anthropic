@@ -106,9 +106,15 @@ public isolated client class ModelProvider {
         map<json> requestPayload = {
             model: self.modelType,
             max_tokens: self.maxTokens,
-            messages: anthropicMessages,
-            temperature: self.temperature
+            messages: anthropicMessages
         };
+
+        // Opus 4.7+ and newer reasoning models utilize internal dynamic sampling and 
+        // extended thinking architectures. External parameters like 'temperature' are 
+        // deprecated by Anthropic for these models and will trigger a 400 Bad Request.
+        if self.modelType != CLAUDE_OPUS_4_7 && self.modelType != CLAUDE_OPUS_4_8 {
+            requestPayload["temperature"] = self.temperature;
+        }
 
         if stop is string {
             span.addStopSequence(stop);

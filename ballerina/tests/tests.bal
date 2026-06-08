@@ -277,7 +277,7 @@ function testGenerateMethodWithInvalidRecordType() returns ai:Error? {
     string msg = (<error>rating).message();
     test:assertTrue(rating is error);
     test:assertTrue(msg.includes(RUNTIME_SCHEMA_NOT_SUPPORTED_ERROR_MESSAGE),
-        string `expected error message to contain: ${RUNTIME_SCHEMA_NOT_SUPPORTED_ERROR_MESSAGE}, but found ${msg}`);
+            string `expected error message to contain: ${RUNTIME_SCHEMA_NOT_SUPPORTED_ERROR_MESSAGE}, but found ${msg}`);
 }
 
 type ProductNameArray ProductName[];
@@ -356,7 +356,6 @@ function testGenerateMethodWithArrayUnionBasicType() returns error? {
     test:assertTrue(result is Cricketers3[]);
 }
 
-
 @test:Config
 function testGenerateMethodWithArrayUnionNull() returns error? {
     Cricketers4[]? result = check claudeProvider->generate(`Name 10 world class cricketers`);
@@ -371,11 +370,11 @@ function testGenerateMethodWithArrayUnionRecord() returns ai:Error? {
 
 @test:Config
 function testGenerateMethodWithArrayUnionRecord2() returns ai:Error? {
-   Cricketers7[]|Cricketers8|error result = claudeProvider->generate(`Name a random world class cricketer`);
+    Cricketers7[]|Cricketers8|error result = claudeProvider->generate(`Name a random world class cricketer`);
     test:assertTrue(result is Cricketers8);
 }
 
- @test:Config
+@test:Config
 function testGenerateMethodWithTextChunk() returns error? {
     ai:TextChunk chunk = {
         content: string `Title: ${blog1.title} Content: ${blog1.content}`
@@ -388,4 +387,16 @@ function testGenerateMethodWithTextChunk() returns error? {
 
     ReviewArray result = check claudeProvider->generate(`How would you rate these text chunks out of ${maxScore}. ${chunks}. Thank you!`);
     test:assertEquals(result, [review, review]);
+}
+
+@test:Config
+function testModelInitializationWithOpus47() returns error? {
+    // This verifies that 'claude-opus-4-7' is now a recognized type in ANTHROPIC_MODEL_NAMES
+    ModelProvider _ = check new (API_KEY, "claude-opus-4-7", SERVICE_URL);
+}
+
+@test:Config
+function testModelInitializationWithOpus48() returns error? {
+    // This verifies that 'claude-opus-4-8' is now a recognized type in ANTHROPIC_MODEL_NAMES
+    ModelProvider _ = check new (API_KEY, "claude-opus-4-8", SERVICE_URL);
 }
