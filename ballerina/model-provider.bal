@@ -191,32 +191,58 @@ public isolated client class ModelProvider {
             return anthropicMessages;
         }
 
+        map<json>[] pendingToolResults = [];
         foreach ai:ChatMessage message in messages {
+            if message is ai:ChatFunctionMessage {
+                pendingToolResults.push({
+                    'type: "tool_result",
+                    tool_use_id: message.id ?: message.name,
+                    content: message.content ?: ""
+                });
+                continue;
+            }
+
+            if pendingToolResults.length() > 0 {
+                anthropicMessages.push({role: ai:USER, content: pendingToolResults.clone()});
+                pendingToolResults = [];
+            }
+
             if message is ai:ChatUserMessage {
                 anthropicMessages.push({
                     role: ai:USER,
                     content: check getChatMessageStringContent(message.content)
                 });
             } else if message is ai:ChatSystemMessage {
-                // Add a user message containing the system prompt
                 string content = check getChatMessageStringContent(message.content);
                 anthropicMessages.push({
                     role: ai:USER,
                     content: string `<system>${content}</system>\n\n`
                 });
-            } else if message is ai:ChatAssistantMessage && message.content is string {
-                anthropicMessages.push({
-                    role: ai:ASSISTANT,
-                    content: message.content ?: ""
-                });
-            } else if message is ai:ChatFunctionMessage && message.content is string {
-                // Include function results as user messages with special formatting
-                anthropicMessages.push({
-                    role: ai:USER,
-                    content: string `<function_results>\nFunction: ${message.name}\n`
-                        + string `Output: ${message.content ?: ""}\n</function_results>`
-                });
+            } else if message is ai:ChatAssistantMessage {
+                map<json>[] contentBlocks = [];
+                string? textContent = message.content;
+                if textContent is string {
+                    contentBlocks.push({'type: "text", text: textContent});
+                }
+                ai:FunctionCall[]? toolCalls = message.toolCalls;
+                if toolCalls is ai:FunctionCall[] {
+                    foreach ai:FunctionCall tc in toolCalls {
+                        contentBlocks.push({
+                            'type: "tool_use",
+                            id: tc.id ?: "",
+                            name: tc.name,
+                            input: tc.arguments ?: {}
+                        });
+                    }
+                }
+                if contentBlocks.length() > 0 {
+                    anthropicMessages.push({role: ai:ASSISTANT, content: contentBlocks});
+                }
             }
+        }
+
+        if pendingToolResults.length() > 0 {
+            anthropicMessages.push({role: ai:USER, content: pendingToolResults});
         }
         return anthropicMessages;
     }
@@ -255,7 +281,7 @@ isolated function mapContentToFunctionCall(ContentBlock block) returns ai:Functi
     if arguments is error {
         return error ai:LlmError("Invalid or malformed arguments received in function call response.", arguments);
     }
-    return {name: blockName, arguments};
+    return {name: blockName, arguments, id: block.id};
 }
 
 isolated function getChatMessageStringContent(ai:Prompt|string prompt) returns string|ai:Error {

@@ -104,8 +104,8 @@ public enum ANTHROPIC_MODEL_NAMES {
 type AnthropicMessage record {|
     # Role of the participant in the conversation (e.g., "user" or "assistant")
     string role;
-    # The message content
-    string content;
+    # The message content — either plain text or an array of content blocks
+    json content;
 |};
 
 # Anthropic API response format
