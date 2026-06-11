@@ -109,10 +109,7 @@ public isolated client class ModelProvider {
             messages: anthropicMessages
         };
 
-        // Opus 4.7+ and newer reasoning models utilize internal dynamic sampling and 
-        // extended thinking architectures. External parameters like 'temperature' are 
-        // deprecated by Anthropic for these models and will trigger a 400 Bad Request.
-        if self.modelType != CLAUDE_OPUS_4_7 && self.modelType != CLAUDE_OPUS_4_8 {
+        if supportsTemperature(self.modelType) {
             requestPayload["temperature"] = self.temperature;
         }
 

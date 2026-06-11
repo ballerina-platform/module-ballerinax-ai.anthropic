@@ -322,8 +322,7 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
         tool_choice: getGetResultsToolChoice()
     };
 
-    // Add temperature only if the model is not Claude Opus 4.7 or 4.8
-    if modelType != CLAUDE_OPUS_4_7 && modelType != CLAUDE_OPUS_4_8 {
+    if supportsTemperature(modelType) {
         request["temperature"] = temperature;
     }
 
@@ -397,4 +396,8 @@ isolated function getFunctionCallFromContentBlocks(ContentBlock[] blocks) return
         }
     }
     return functionCalls;
+}
+
+isolated function supportsTemperature(string modelType) returns boolean {
+    return modelType != CLAUDE_OPUS_4_7 && modelType != CLAUDE_OPUS_4_8;
 }
