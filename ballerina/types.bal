@@ -87,6 +87,8 @@ public enum ANTHROPIC_MODEL_NAMES {
     CLAUDE_OPUS_4_5 = "claude-opus-4-5",
     CLAUDE_OPUS_4_5_20251101 = "claude-opus-4-5-20251101",
     CLAUDE_OPUS_4_6 = "claude-opus-4-6",
+    CLAUDE_OPUS_4_7 = "claude-opus-4-7",
+    CLAUDE_OPUS_4_8 = "claude-opus-4-8",
     CLAUDE_SONNET_4_6 = "claude-sonnet-4-6",
     CLAUDE_OPUS_4_1_20250805 = "claude-opus-4-1-20250805",
     CLAUDE_OPUS_4_20250514 = "claude-opus-4-20250514",

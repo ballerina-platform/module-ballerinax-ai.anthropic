@@ -14,6 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import ballerina/ai;
 import ballerina/http;
 import ballerina/test;
 
@@ -49,5 +50,28 @@ service /llm on new http:Listener(8080) {
         test:assertEquals(parameters, getExpectedParameterSchema(initialText),
                 string `Test failed for prompt with initial content, ${initialText}`);
         return getTestServiceResponse(initialText);
+    }
+}
+
+service /temptest on new http:Listener(7070) {
+    resource function post anthropic/messages(map<json> payload) returns AnthropicApiResponse|error {
+        string modelType = check payload["model"].ensureType();
+        if modelType == CLAUDE_OPUS_4_7 || modelType == CLAUDE_OPUS_4_8 {
+            test:assertFalse(payload.hasKey("temperature"),
+                string `temperature must be absent for model: ${modelType}`);
+        } else {
+            test:assertEquals(payload["temperature"], DEFAULT_TEMPERATURE,
+                string `temperature must be present for model: ${modelType}`);
+        }
+        return {
+            id: "temp-test-id",
+            model: modelType,
+            'type: "message",
+            stop_reason: "end_turn",
+            role: ai:ASSISTANT,
+            stop_sequence: (),
+            usage: {input_tokens: 10, output_tokens: 5},
+            content: [{'type: "text", text: "ok"}]
+        };
     }
 }

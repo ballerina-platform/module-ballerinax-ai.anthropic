@@ -313,14 +313,18 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
 
     map<json>[] messages = [{role: ai:USER, "content": chatContent}];
     span.addInputMessages(messages);
+
     map<json> request = {
         messages,
         model: modelType,
         max_tokens: maxTokens,
-        temperature,
         tools,
         tool_choice: getGetResultsToolChoice()
     };
+
+    if supportsTemperature(modelType) {
+        request["temperature"] = temperature;
+    }
 
     map<string> headers = {
         "x-api-key": apiKey,
@@ -392,4 +396,8 @@ isolated function getFunctionCallFromContentBlocks(ContentBlock[] blocks) return
         }
     }
     return functionCalls;
+}
+
+isolated function supportsTemperature(string modelType) returns boolean {
+    return modelType != CLAUDE_OPUS_4_7 && modelType != CLAUDE_OPUS_4_8;
 }

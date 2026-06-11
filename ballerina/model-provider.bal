@@ -106,9 +106,12 @@ public isolated client class ModelProvider {
         map<json> requestPayload = {
             model: self.modelType,
             max_tokens: self.maxTokens,
-            messages: anthropicMessages,
-            temperature: self.temperature
+            messages: anthropicMessages
         };
+
+        if supportsTemperature(self.modelType) {
+            requestPayload["temperature"] = self.temperature;
+        }
 
         if stop is string {
             span.addStopSequence(stop);
