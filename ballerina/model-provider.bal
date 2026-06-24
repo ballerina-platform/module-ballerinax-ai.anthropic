@@ -151,6 +151,68 @@ public isolated client class ModelProvider {
         return response;
     }
 
+    # Uses the Anthropic API to generate a streaming response.
+    # + messages - List of chat messages or a user message
+    # + tools - Tool definitions to be used for the tool call
+    # + stop - Stop sequence to stop the completion
+    # + return - A stream of normalized chat completion chunks, or an error in case of failures
+    remote function chatStream(
+            ai:ChatMessage[]|ai:ChatUserMessage messages,
+            ai:ChatCompletionFunctions[] tools = [],
+            string? stop = ())
+            returns stream<ai:ChatCompletionChunk, ai:Error?>|ai:Error {
+
+        AnthropicMessage[]|ai:Error anthropicMessages = self.mapToAnthropicMessages(messages);
+        if anthropicMessages is ai:Error {
+            return anthropicMessages;
+        }
+
+        map<json> requestPayload = {
+            model: self.modelType,
+            max_tokens: self.maxTokens,
+            messages: anthropicMessages,
+            'stream : true
+        };
+
+        requestPayload["temperature"] = self.temperature;
+
+        if stop is string {
+            requestPayload["stop_sequences"] = [stop];
+        }
+
+        if tools.length() > 0 {
+            requestPayload["tools"] = self.mapToAnthropicTools(tools);
+        }
+
+        map<string> headers = {
+            "x-api-key": self.apiKey,
+            "anthropic-version": ANTHROPIC_API_VERSION,
+            "content-type": "application/json"
+        };
+
+        stream<http:SseEvent, error?>|error sseStream =
+            self.AnthropicClient->/messages.post(requestPayload, headers);
+        if sseStream is error {
+            return error ai:LlmConnectionError("Failed to open stream", sseStream);
+        }
+
+        // Assign to an explicitly typed local first: `new (..)` cannot infer the stream
+        // type when the function's return type is a union (`stream<...>|ai:Error`).
+        stream<ai:ChatCompletionChunk, ai:Error?> chunkStream = new (new AnthropicChunkIterator(sseStream));
+        return chunkStream;
+    }
+
+    # Sends a streaming chat request to the model using the given prompt and streams back
+    # the generated answer. Only `string` is supported as the expected type.
+    #
+    # + prompt - The prompt to use in the chat request
+    # + td - The expected type of the streamed value; must be `string`
+    # + return - A stream of the generated value, or an error if the type is unsupported
+    remote function generateStream(ai:Prompt prompt, @display {label: "Expected type"} typedesc<anydata> td = <>)
+            returns stream<td, ai:Error?>|ai:Error = @java:Method {
+        'class: "io.ballerina.lib.ai.anthropic.StreamGenerator"
+    } external;
+
     private isolated function getAssistantMessage(AnthropicApiResponse anthropicResponse) returns ai:ChatAssistantMessage|ai:Error {
         string? content = ();
         ai:FunctionCall[] toolCalls = [];
@@ -242,6 +304,131 @@ public isolated client class ModelProvider {
         }
 
         return anthropicTools;
+    }
+}
+
+# Iterator that converts Anthropic's Server-Sent Event stream into a stream of normalized
+# `ai:ChatCompletionChunk` values. Anthropic's stream is stateful: the message id/model and
+# input-token count arrive once on `message_start`, so they are captured and carried onto
+# subsequent chunks. Each event is parsed and mapped via `toAiChunk`; non-emitting events
+# (`ping`, `content_block_stop`) and unparseable payloads are skipped, and `message_stop`
+# terminates the stream.
+class AnthropicChunkIterator {
+    private stream<http:SseEvent, error?> sseStream;
+    private string? id = ();
+    private string? model = ();
+    private int? inputTokens = ();
+
+    isolated function init(stream<http:SseEvent, error?> sseStream) {
+        self.sseStream = sseStream;
+    }
+
+    public isolated function next() returns record {|ai:ChatCompletionChunk value;|}|ai:Error? {
+        while true {
+            record {|http:SseEvent value;|}|error? nextEvent = self.sseStream.next();
+            if nextEvent is () {
+                return ();
+            }
+            if nextEvent is error {
+                return error ai:LlmError("Error while reading the model stream", nextEvent);
+            }
+
+            http:SseEvent sseEvent = nextEvent.value;
+            string? event = sseEvent.event;
+            string? rawData = sseEvent.data;
+            if event is () || rawData is () {
+                continue;
+            }
+            if event == "message_stop" {
+                return ();
+            }
+
+            json|error payload = rawData.fromJsonString();
+            if payload is error {
+                continue;
+            }
+
+            if event == "message_start" {
+                StreamMessageStart|error messageStart = payload.cloneWithType();
+                if messageStart is StreamMessageStart {
+                    self.id = messageStart.message.id;
+                    self.model = messageStart.message.model;
+                    self.inputTokens = messageStart.message.usage.input_tokens;
+                }
+            }
+
+            ai:ChatCompletionChunk?|error chunk = toAiChunk(event, payload, self.id, self.model, self.inputTokens);
+            if chunk is error {
+                continue;
+            }
+            if chunk is ai:ChatCompletionChunk {
+                return {value: chunk};
+            }
+        }
+    }
+
+    public isolated function close() returns ai:Error? {
+        error? result = self.sseStream.close();
+        if result is error {
+            return error ai:Error("Error while closing the model stream", result);
+        }
+        return ();
+    }
+}
+
+# Builds the string stream behind the dependently-typed `generateStream`. The native
+# `StreamGenerator` shim trampolines here so the type gating stays in Ballerina. Only
+# `string` is supported; other types yield an error because a partial generation is a valid
+# value only for `string`. When valid, the underlying `chatStream` chunks are projected onto
+# their text fragments.
+#
+# + llmModel - The model provider whose `chatStream` supplies the chunks
+# + prompt - The prompt to send to the model
+# + td - The caller's expected type; must be `string`
+# + return - A stream of text fragments, or an error if the type is unsupported
+function generateLlmResponseStream(ModelProvider llmModel, ai:Prompt prompt, typedesc<anydata> td)
+        returns stream<string, ai:Error?>|ai:Error {
+    if td !is typedesc<string> {
+        return error ai:Error("This data type is not supported for streaming. " +
+            "'generateStream' supports only 'string'; use 'generate' for structured types.");
+    }
+    stream<ai:ChatCompletionChunk, ai:Error?> chunks = check llmModel->chatStream({role: ai:USER, content: prompt});
+    stream<string, ai:Error?> textStream = new (new ChunkTextIterator(chunks));
+    return textStream;
+}
+
+# Projects a normalized `ai:ChatCompletionChunk` stream onto its text content, yielding each
+# non-empty `delta.content` fragment and skipping tool-call, reasoning, and usage-only chunks.
+# Backs `generateLlmResponseStream`.
+class ChunkTextIterator {
+    private stream<ai:ChatCompletionChunk, ai:Error?> chunks;
+
+    isolated function init(stream<ai:ChatCompletionChunk, ai:Error?> chunks) {
+        self.chunks = chunks;
+    }
+
+    public isolated function next() returns record {|string value;|}|ai:Error? {
+        while true {
+            record {|ai:ChatCompletionChunk value;|}|ai:Error? next = self.chunks.next();
+            if next is () {
+                return ();
+            }
+            if next is ai:Error {
+                return next;
+            }
+            ai:ChatCompletionChunkChoice[] choices = next.value.choices;
+            if choices.length() == 0 {
+                continue;
+            }
+            string? content = choices[0].delta.content;
+            if content is string && content.length() > 0 {
+                return {value: content};
+            }
+        }
+    }
+
+    public isolated function close() returns ai:Error? {
+        return self.chunks.close();
     }
 }
 

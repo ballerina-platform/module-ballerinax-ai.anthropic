@@ -18,11 +18,13 @@ import ballerina/ai;
 import ballerina/test;
 
 const SERVICE_URL = "http://localhost:8080/llm/anthropic";
+const STREAM_TEST_SERVICE_URL = "http://localhost:9090/streamtest/anthropic";
 const API_KEY = "not-a-real-api-key";
 const ERROR_MESSAGE = "Error occurred while attempting to parse the response from the LLM as the expected type. Retrying and/or validating the prompt could fix the response.";
 const RUNTIME_SCHEMA_NOT_SUPPORTED_ERROR_MESSAGE = "Runtime schema generation is not yet supported";
 
 final ModelProvider claudeProvider = check new (API_KEY, CLAUDE_3_7_SONNET_20250219, SERVICE_URL);
+final ModelProvider streamProvider = check new (API_KEY, CLAUDE_3_7_SONNET_20250219, STREAM_TEST_SERVICE_URL);
 
 @test:Config
 function testGenerateMethodWithBasicReturnType() returns ai:Error? {
@@ -375,7 +377,98 @@ function testGenerateMethodWithArrayUnionRecord2() returns ai:Error? {
     test:assertTrue(result is Cricketers8);
 }
 
- @test:Config
+@test:Config
+function testChatStream() returns error? {
+    stream<ai:ChatCompletionChunk, ai:Error?>|ai:Error result = streamProvider->chatStream([
+        {role: ai:USER, content: "Say hello"}
+    ]);
+    test:assertFalse(result is ai:Error, "Expected a stream, got an error");
+    stream<ai:ChatCompletionChunk, ai:Error?> chunkStream = check result;
+
+    string content = "";
+    string toolId = "";
+    string toolName = "";
+    string toolArgs = "";
+    ai:FinishReason? finishReason = ();
+    ai:CompletionTokenUsage? usage = ();
+    check from ai:ChatCompletionChunk chunk in chunkStream
+        do {
+            if chunk.choices.length() > 0 {
+                ai:ChatCompletionChunkChoice choice = chunk.choices[0];
+                string? fragment = choice.delta.content;
+                if fragment is string {
+                    content += fragment;
+                }
+                ai:ToolCallChunk[]? toolCalls = choice.delta.toolCalls;
+                if toolCalls is ai:ToolCallChunk[] {
+                    foreach ai:ToolCallChunk toolCall in toolCalls {
+                        string? id = toolCall?.id;
+                        if id is string {
+                            toolId = id;
+                        }
+                        ai:FunctionCallChunk? 'function = toolCall?.'function;
+                        if 'function is ai:FunctionCallChunk {
+                            string? name = 'function?.name;
+                            if name is string {
+                                toolName = name;
+                            }
+                            string? args = 'function?.arguments;
+                            if args is string {
+                                toolArgs += args;
+                            }
+                        }
+                    }
+                }
+                ai:FinishReason? reason = choice.finishReason;
+                if reason is ai:FinishReason {
+                    finishReason = reason;
+                }
+            }
+            ai:CompletionTokenUsage? chunkUsage = chunk.usage;
+            if chunkUsage is ai:CompletionTokenUsage {
+                usage = chunkUsage;
+            }
+        };
+
+    // Text fragments stream and accumulate.
+    test:assertEquals(content, "Hello world");
+    // Tool id/name arrive on the first fragment; the JSON argument fragments stream and
+    // accumulate by index across subsequent chunks.
+    test:assertEquals(toolId, "toolu_1");
+    test:assertEquals(toolName, "get_weather");
+    test:assertEquals(toolArgs, "{\"city\":\"Paris\"}");
+    // Anthropic `tool_use` stop reason normalizes to `tool_calls`.
+    test:assertEquals(finishReason, ai:TOOL_CALLS);
+    // Usage merges message_start input tokens with message_delta output tokens.
+    test:assertTrue(usage is ai:CompletionTokenUsage, "Expected usage on the final chunk");
+    ai:CompletionTokenUsage finalUsage = check usage.ensureType();
+    test:assertEquals(finalUsage.promptTokens, 10);
+    test:assertEquals(finalUsage.completionTokens, 7);
+    test:assertEquals(finalUsage.totalTokens, 17);
+}
+
+@test:Config
+function testGenerateStream() returns error? {
+    stream<string, ai:Error?>|ai:Error result = streamProvider->generateStream(`Say hello`);
+    test:assertFalse(result is ai:Error, "Expected a stream, got an error");
+    stream<string, ai:Error?> textStream = check result;
+
+    string collected = "";
+    check from string fragment in textStream
+        do {
+            collected += fragment;
+        };
+    // generateStream projects each chunk's delta.content; tool-call/usage chunks carry no text.
+    test:assertEquals(collected, "Hello world");
+}
+
+@test:Config
+function testGenerateStreamRejectsNonStringType() returns error? {
+    stream<int, ai:Error?>|ai:Error result = streamProvider->generateStream(`Say hello`);
+    test:assertTrue(result is ai:Error, "'generateStream' must reject non-string expected types");
+}
+
+@test:Config
 function testGenerateMethodWithTextChunk() returns error? {
     ai:TextChunk chunk = {
         content: string `Title: ${blog1.title} Content: ${blog1.content}`
