@@ -18,11 +18,13 @@ import ballerina/ai;
 import ballerina/test;
 
 const SERVICE_URL = "http://localhost:8080/llm/anthropic";
+const CHAT_SERVICE_URL = "http://localhost:9090/chat/anthropic";
 const API_KEY = "not-a-real-api-key";
 const ERROR_MESSAGE = "Error occurred while attempting to parse the response from the LLM as the expected type. Retrying and/or validating the prompt could fix the response.";
 const RUNTIME_SCHEMA_NOT_SUPPORTED_ERROR_MESSAGE = "Runtime schema generation is not yet supported";
 
 final ModelProvider claudeProvider = check new (API_KEY, CLAUDE_3_7_SONNET_20250219, SERVICE_URL);
+final ModelProvider chatTestProvider = check new (API_KEY, CLAUDE_3_7_SONNET_20250219, CHAT_SERVICE_URL);
 
 @test:Config
 function testGenerateMethodWithBasicReturnType() returns ai:Error? {
@@ -388,4 +390,49 @@ function testGenerateMethodWithTextChunk() returns error? {
 
     ReviewArray result = check claudeProvider->generate(`How would you rate these text chunks out of ${maxScore}. ${chunks}. Thank you!`);
     test:assertEquals(result, [review, review]);
+}
+
+@test:Config
+function testMultiRoundToolCallSerialization() returns error? {
+    // Simulate the agent history after one round: user asked, assistant requested a tool, tool returned a result.
+    // We call chat() with this pre-built history and verify the HTTP payload the code sends to Anthropic
+    // has proper tool_use and tool_result blocks — not XML text.
+    ai:ChatFunctionMessage addResult = {role: "function", name: "add", id: "toolu_001", content: "8"};
+    ai:ChatMessage[] history = [
+        {role: ai:USER, content: "Add 5 and 3"},
+        {
+            role: ai:ASSISTANT,
+            content: (),
+            toolCalls: [{name: "add", id: "toolu_001", arguments: {a: 5, b: 3}}]
+        },
+        addResult
+    ];
+
+    ai:ChatAssistantMessage result = check chatTestProvider->chat(history);
+    test:assertEquals(result.content, "The answer is 8.");
+}
+
+@test:Config
+function testParallelToolCallSerialization() returns error? {
+    // Simulate parallel tool calls: assistant requested two tools at once.
+    // The two ChatFunctionMessages must be batched into a SINGLE user message
+    // with two tool_result blocks — not two separate user messages.
+    ai:ChatFunctionMessage addResult = {role: "function", name: "add", id: "toolu_001", content: "8"};
+    ai:ChatFunctionMessage subtractResult = {role: "function", name: "subtract", id: "toolu_002", content: "6"};
+    ai:ChatMessage[] history = [
+        {role: ai:USER, content: "Add 5 and 3, subtract 4 from 10"},
+        {
+            role: ai:ASSISTANT,
+            content: (),
+            toolCalls: [
+                {name: "add", id: "toolu_001", arguments: {a: 5, b: 3}},
+                {name: "subtract", id: "toolu_002", arguments: {a: 10, b: 4}}
+            ]
+        },
+        addResult,
+        subtractResult
+    ];
+
+    ai:ChatAssistantMessage result = check chatTestProvider->chat(history);
+    test:assertEquals(result.content, "The answers are 8 and 6.");
 }

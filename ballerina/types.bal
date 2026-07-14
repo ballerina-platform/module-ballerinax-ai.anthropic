@@ -100,12 +100,45 @@ public enum ANTHROPIC_MODEL_NAMES {
     CLAUDE_3_HAIKU_20240307 = "claude-3-haiku-20240307"
 }
 
+# A text content block in an Anthropic request message
+type TextContentBlock record {|
+    # The type discriminator for a text block
+    "text" 'type = "text";
+    # The text content
+    string text;
+|};
+
+# A tool-use content block in an assistant request message
+type ToolUseContentBlock record {|
+    # The type discriminator for a tool-use block
+    "tool_use" 'type = "tool_use";
+    # The unique identifier of the tool call, used to correlate the result
+    string id;
+    # Name of the tool being invoked
+    string name;
+    # Input arguments passed to the tool
+    json input;
+|};
+
+# A tool-result content block in a user request message
+type ToolResultContentBlock record {|
+    # The type discriminator for a tool-result block
+    "tool_result" 'type = "tool_result";
+    # The id of the `tool_use` block this result corresponds to
+    string tool_use_id;
+    # The result content returned by the tool
+    json content;
+|};
+
+# Any content block that can appear in an Anthropic request message
+type RequestContentBlock TextContentBlock|ToolUseContentBlock|ToolResultContentBlock;
+
 # Anthropic API request message format
 type AnthropicMessage record {|
     # Role of the participant in the conversation (e.g., "user" or "assistant")
     string role;
-    # The message content
-    string content;
+    # The message content — either plain text or an array of content blocks
+    string|RequestContentBlock[] content;
 |};
 
 # Anthropic API response format
