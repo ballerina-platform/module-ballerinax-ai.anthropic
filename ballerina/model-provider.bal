@@ -191,11 +191,10 @@ public isolated client class ModelProvider {
             return anthropicMessages;
         }
 
-        map<json>[] pendingToolResults = [];
+        ToolResultContentBlock[] pendingToolResults = [];
         foreach ai:ChatMessage message in messages {
             if message is ai:ChatFunctionMessage {
                 pendingToolResults.push({
-                    'type: "tool_result",
                     tool_use_id: message.id ?: message.name,
                     content: message.content ?: ""
                 });
@@ -219,17 +218,16 @@ public isolated client class ModelProvider {
                     content: string `<system>${content}</system>\n\n`
                 });
             } else if message is ai:ChatAssistantMessage {
-                map<json>[] contentBlocks = [];
+                RequestContentBlock[] contentBlocks = [];
                 string? textContent = message.content;
                 if textContent is string {
-                    contentBlocks.push({'type: "text", text: textContent});
+                    contentBlocks.push(<TextContentBlock>{text: textContent});
                 }
                 ai:FunctionCall[]? toolCalls = message.toolCalls;
                 if toolCalls is ai:FunctionCall[] {
                     foreach ai:FunctionCall tc in toolCalls {
-                        contentBlocks.push({
-                            'type: "tool_use",
-                            id: tc.id ?: "",
+                        contentBlocks.push(<ToolUseContentBlock>{
+                            id: tc.id ?: tc.name,
                             name: tc.name,
                             input: tc.arguments ?: {}
                         });

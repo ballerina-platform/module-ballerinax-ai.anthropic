@@ -53,7 +53,7 @@ service /llm on new http:Listener(8080) {
     }
 }
 
-service /chattest on new http:Listener(9090) {
+service /chat on new http:Listener(9090) {
     resource function post anthropic/messages(map<json> payload) returns AnthropicApiResponse|error {
         json[] messages = check payload["messages"].ensureType();
         test:assertEquals(messages.length(), 3, "Expected 3 messages in the serialized Anthropic payload");
