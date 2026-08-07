@@ -19,7 +19,7 @@ import ballerina/test;
 
 service /llm on new http:Listener(8080) {
     resource function post anthropic/messages(map<json> payload)returns AnthropicApiResponse|error {
-        test:assertEquals(payload["model"], CLAUDE_3_7_SONNET_20250219);
+        test:assertEquals(payload["model"], CLAUDE_SONNET_4_6);
         test:assertEquals(payload["max_tokens"], 512);
         test:assertEquals(payload["temperature"], 0.7d);
 

@@ -570,7 +570,7 @@ isolated function getExpectedContentParts(string message) returns (map<anydata>)
 isolated function getTestServiceResponse(string content) returns AnthropicApiResponse =>
     {
     id: "test-id",
-    model: CLAUDE_3_7_SONNET_20250219,
+    model: CLAUDE_SONNET_4_6,
     'type: "message",
     stop_reason: "tool_calls",
     role: ai:ASSISTANT,
