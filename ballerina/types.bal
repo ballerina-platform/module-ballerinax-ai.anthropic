@@ -78,6 +78,12 @@ public type ConnectionConfig record {|
 |};
 
 # Models types for Anthropic
+#
+# Retired models (`CLAUDE_3_SONNET_20240229`, `CLAUDE_3_5_SONNET_20240620`, `CLAUDE_3_5_SONNET_20241022`,
+# `CLAUDE_3_OPUS_20240229`, `CLAUDE_3_5_HAIKU_20241022`, `CLAUDE_3_7_SONNET_20250219`, `CLAUDE_3_HAIKU_20240307`,
+# `CLAUDE_OPUS_4_20250514`, `CLAUDE_SONNET_4_20250514`, `CLAUDE_OPUS_4_1_20250805`) have been removed, as
+# Anthropic no longer serves requests for them. See the official deprecation list:
+# https://platform.claude.com/docs/en/about-claude/model-deprecations
 @display {label: "Anthropic Model Names"}
 public enum ANTHROPIC_MODEL_NAMES {
     CLAUDE_SONNET_4_5 = "claude-sonnet-4-5",
