@@ -101,6 +101,39 @@ public enum ANTHROPIC_MODEL_NAMES {
     CLAUDE_3_HAIKU_20240307 = "claude-3-haiku-20240307"
 }
 
+# Extended thinking (reasoning) configuration for Anthropic models. Exactly one of the
+# three variants is chosen; the `type` field discriminates them.
+#
+# Only Claude 3.7 Sonnet and Claude 4.x models support extended thinking. When thinking is
+# `enabled` or `adaptive`, Anthropic requires the default temperature, so the provider
+# omits `temperature` from the request in those cases.
+@display {label: "Thinking Configuration"}
+public type ThinkingConfig EnabledThinking|AdaptiveThinking|DisabledThinking;
+
+# Enables extended thinking with a fixed token budget.
+public type EnabledThinking record {|
+    # Discriminator; always "enabled"
+    "enabled" 'type = "enabled";
+    # Maximum number of tokens the model may spend on internal thinking. Must be at least
+    # 1024 and strictly less than the request's `maxTokens`.
+    int budget_tokens;
+|};
+
+# Enables adaptive extended thinking, letting the model decide how much to think.
+public type AdaptiveThinking record {|
+    # Discriminator; always "adaptive"
+    "adaptive" 'type = "adaptive";
+    # How the thinking is returned: "summarized" (a condensed summary of the reasoning) or
+    # "omitted" (the reasoning is not returned). When absent, the API default applies.
+    "summarized"|"omitted" display?;
+|};
+
+# Explicitly disables extended thinking (the default behaviour when no config is given).
+public type DisabledThinking record {|
+    # Discriminator; always "disabled"
+    "disabled" 'type = "disabled";
+|};
+
 # Anthropic API request message format
 type AnthropicMessage record {|
     # Role of the participant in the conversation (e.g., "user" or "assistant")
