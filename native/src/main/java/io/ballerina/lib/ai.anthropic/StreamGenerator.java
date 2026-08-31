@@ -19,26 +19,25 @@ package io.ballerina.lib.ai.anthropic;
 
 import io.ballerina.runtime.api.Environment;
 import io.ballerina.runtime.api.Module;
-import io.ballerina.runtime.api.utils.StringUtils;
 import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BTypedesc;
 
 /**
- * This class provides the native function to generate a response from an Anthropic model.
+ * Native shim for the streaming response generation of an Anthropic model provider.
  *
- * @since 1.0.0
+ * <p>The {@code generateStream} method has a dependently-typed return
+ * ({@code stream<td, ai:Error?>}), which the language only permits on an
+ * {@code external} function. This shim trampolines to the Ballerina
+ * {@code generateLlmResponseStream} helper, where the type gating and stream
+ * construction logic lives.
+ *
+ * @since 1.4.0
  */
-public class Generator {
-    public static Object generate(Environment env, BObject modelProvider,
-                                  BObject prompt, BTypedesc expectedResponseTypedesc) {
+public class StreamGenerator {
+    public static Object generateStream(Environment env, BObject modelProvider,
+                                        BObject prompt, BTypedesc expectedResponseTypedesc) {
         return env.getRuntime().callFunction(
-                new Module("ballerinax", "ai.anthropic", "1"), "generateLlmResponse", null,
-                modelProvider.get(StringUtils.fromString("AnthropicClient")), 
-                modelProvider.get(StringUtils.fromString("apiKey")), 
-                modelProvider.get(StringUtils.fromString("modelType")),
-                modelProvider.get(StringUtils.fromString("maxTokens")),
-                modelProvider.get(StringUtils.fromString("temperature")),
-                modelProvider.get(StringUtils.fromString("thinkingConfig")),
-                prompt, expectedResponseTypedesc);
+                new Module("ballerinax", "ai.anthropic", "1"), "generateLlmResponseStream", null,
+                modelProvider, prompt, expectedResponseTypedesc);
     }
 }

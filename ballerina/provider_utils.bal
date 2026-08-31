@@ -293,8 +293,8 @@ isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|ai
 }
 
 isolated function generateLlmResponse(http:Client anthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType,
-        int maxTokens, decimal temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc)
-            returns anydata|ai:Error {
+        int maxTokens, decimal temperature, (readonly & ThinkingConfig)? thinkingConfig, ai:Prompt prompt,
+        typedesc<json> expectedResponseTypedesc) returns anydata|ai:Error {
     observe:GenerateContentSpan span = observe:createGenerateContentSpan(modelType);
     span.addProvider("anthropic");
     span.addTemperature(temperature);
@@ -317,10 +317,10 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
         messages,
         model: modelType,
         max_tokens: maxTokens,
-        temperature,
         tools,
         tool_choice: getGetResultsToolChoice()
     };
+    applyThinkingConfig(request, thinkingConfig, temperature);
 
     map<string> headers = {
         "x-api-key": apiKey,
