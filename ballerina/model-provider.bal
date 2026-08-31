@@ -475,7 +475,9 @@ class AnthropicChunkIterator {
         return err;
     }
 
-    # Marks the stream completed, returning whether it was already marked before this call.
+    # Marks the stream completed.
+    #
+    # + return - Whether the stream was already marked completed before this call
     private isolated function markCompleted() returns boolean {
         lock {
             boolean wasCompleted = self.completed;

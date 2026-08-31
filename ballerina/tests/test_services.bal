@@ -69,7 +69,7 @@ isolated function getCapturedPayload(string key) returns json {
     }
 }
 
-# Builds an SSE response from a raw event body.
+// Builds an SSE response from a raw event body.
 isolated function sseResponse(string body) returns http:Response {
     http:Response res = new;
     res.setHeader("Content-Type", "text/event-stream");
