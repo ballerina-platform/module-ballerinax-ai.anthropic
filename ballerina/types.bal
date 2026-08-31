@@ -210,18 +210,22 @@ type ContentBlock record {
     string file_id?;
 };
 
-# Breakdown of cached tokens by TTL bucket
+# Breakdown of cached tokens by TTL bucket.
+#
+# Every field is optional: these are wire-format records, and Anthropic may omit a
+# bucket or add new ones. A required field here would fail the conversion of the whole
+# enclosing response/event, so absence is modelled rather than rejected.
 type CacheCreation record {
-    # Number of input tokens used to create the 1 hour cache entry
-    int ephemeral_1h_input_tokens;
-    # Number of input tokens used to create the 5 minute cache entry
-    int ephemeral_5m_input_tokens;
+    # Number of input tokens used to create the 1 hour cache entry, if reported
+    int? ephemeral_1h_input_tokens = ();
+    # Number of input tokens used to create the 5 minute cache entry, if reported
+    int? ephemeral_5m_input_tokens = ();
 };
 
 # Breakdown of output tokens by category
 type OutputTokensDetails record {
-    # Number of output tokens spent on internal reasoning
-    int thinking_tokens;
+    # Number of output tokens spent on internal reasoning, if reported
+    int? thinking_tokens = ();
 };
 
 # Number of server-side tool requests made during the response
@@ -274,10 +278,10 @@ type StreamMessageStart record {
 
 # Container used for code execution tool requests
 type MessageContainer record {
-    # Unique identifier for the container
-    string id;
-    # Expiry timestamp of the container (ISO 8601)
-    string expires_at;
+    # Unique identifier for the container, if reported
+    string? id = ();
+    # Expiry timestamp of the container (ISO 8601), if reported
+    string? expires_at = ();
 };
 
 # Structured information about a model refusal
@@ -412,6 +416,26 @@ type StreamMessageDelta record {
 type StreamMessageStop record {
     # Event type ("message_stop")
     string 'type;
+};
+
+# Body of an `error` streaming event.
+#
+# Anthropic can fail a request *after* the stream has opened and some content has already
+# been delivered (for example `overloaded_error` during generation). The transport still
+# reports success, so this event is the only signal that the response is incomplete.
+type StreamErrorDetail record {
+    # Error category (e.g. "overloaded_error", "api_error", "invalid_request_error")
+    string? 'type = ();
+    # Human-readable description of the failure
+    string? message = ();
+};
+
+# Streaming event signalling that generation failed mid-stream
+type StreamError record {
+    # Event type ("error")
+    string 'type;
+    # The error reported by the API
+    StreamErrorDetail? 'error = ();
 };
 
 # Periodic keepalive event sent by the server to maintain the connection

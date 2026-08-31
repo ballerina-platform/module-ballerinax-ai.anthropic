@@ -23,6 +23,8 @@ const DEFAULT_ANTHROPIC_SERVICE_URL = "https://api.anthropic.com/v1";
 const DEFAULT_MAX_TOKEN_COUNT = 512;
 const DEFAULT_TEMPERATURE = 0.7d;
 const ANTHROPIC_API_VERSION = "2023-06-01";
+# The smallest thinking budget Anthropic accepts for `enabled` extended thinking.
+const MIN_THINKING_BUDGET_TOKENS = 1024;
 
 # Provider is a client class that provides an interface for interacting with Anthropic Large Language Models.
 public isolated client class ModelProvider {
@@ -52,6 +54,8 @@ public isolated client class ModelProvider {
             @display {label: "Temperature"} decimal temperature = DEFAULT_TEMPERATURE,
             @display {label: "Thinking Configuration"} ThinkingConfig? thinkingConfig = (),
             @display {label: "Connection Configuration"} *ConnectionConfig connectionConfig) returns ai:Error? {
+
+        check validateThinkingConfig(thinkingConfig, maxTokens);
 
         // Convert ConnectionConfig to http:ClientConfiguration
         http:ClientConfiguration anthropicConfig = {
@@ -84,19 +88,11 @@ public isolated client class ModelProvider {
         self.thinkingConfig = thinkingConfig.cloneReadOnly();
     }
 
-    # Applies the configured extended-thinking settings to a request payload: adds the
-    # `thinking` object when configured, and sends `temperature` only when thinking is not
-    # active (Anthropic requires the default temperature with `enabled`/`adaptive` thinking).
+    # Applies this provider's extended-thinking settings to a request payload.
     #
     # + requestPayload - The request payload to mutate in place
     private isolated function applyThinkingConfig(map<json> requestPayload) {
-        (readonly & ThinkingConfig)? thinkingConfig = self.thinkingConfig;
-        if thinkingConfig is ThinkingConfig {
-            requestPayload["thinking"] = thinkingConfig;
-        }
-        if thinkingConfig !is EnabledThinking|AdaptiveThinking {
-            requestPayload["temperature"] = self.temperature;
-        }
+        applyThinkingConfig(requestPayload, self.thinkingConfig, self.temperature);
     }
 
     # Uses Anthropic API to generate a response
@@ -180,9 +176,21 @@ public isolated client class ModelProvider {
             ai:ChatCompletionFunctions[] tools = [],
             string? stop = ())
             returns stream<ai:ChatCompletionChunk, ai:Error?>|ai:Error {
+        observe:ChatSpan span = observe:createChatSpan(self.modelType);
+        span.addProvider("anthropic");
+        if self.thinkingConfig !is EnabledThinking|AdaptiveThinking {
+            // Temperature is only sent when extended thinking is inactive; recording it
+            // otherwise would report a value the request never carried.
+            span.addTemperature(self.temperature);
+        }
+        json|ai:Error inputMessage = convertMessageToJson(messages);
+        if inputMessage is json {
+            span.addInputMessages(inputMessage);
+        }
 
         AnthropicMessage[]|ai:Error anthropicMessages = self.mapToAnthropicMessages(messages);
         if anthropicMessages is ai:Error {
+            span.close(anthropicMessages);
             return anthropicMessages;
         }
 
@@ -195,10 +203,12 @@ public isolated client class ModelProvider {
         self.applyThinkingConfig(requestPayload);
 
         if stop is string {
+            span.addStopSequence(stop);
             requestPayload["stop_sequences"] = [stop];
         }
 
         if tools.length() > 0 {
+            span.addTools(tools);
             requestPayload["tools"] = self.mapToAnthropicTools(tools);
         }
 
@@ -211,12 +221,15 @@ public isolated client class ModelProvider {
         stream<http:SseEvent, error?>|error sseStream =
             self.AnthropicClient->/messages.post(requestPayload, headers);
         if sseStream is error {
-            return error ai:LlmConnectionError("Failed to open stream", sseStream);
+            ai:Error err = error ai:LlmConnectionError(
+                    string `Error while connecting to the model: ${sseStream.message()}`);
+            span.close(err);
+            return err;
         }
 
         // Assign to an explicitly typed local first: `new (..)` cannot infer the stream
         // type when the function's return type is a union (`stream<...>|ai:Error`).
-        stream<ai:ChatCompletionChunk, ai:Error?> chunkStream = new (new AnthropicChunkIterator(sseStream));
+        stream<ai:ChatCompletionChunk, ai:Error?> chunkStream = new (new AnthropicChunkIterator(sseStream, span));
         return chunkStream;
     }
 
@@ -329,26 +342,45 @@ public isolated client class ModelProvider {
 # `ai:ChatCompletionChunk` values. Anthropic's stream is stateful: the message id/model and
 # input-token count arrive once on `message_start`, so they are captured and carried onto
 # subsequent chunks. Each event is parsed and mapped via `toAiChunk`; non-emitting events
-# (`ping`, `content_block_stop`) and unparseable payloads are skipped, and `message_stop`
-# terminates the stream.
+# (`ping`, `content_block_stop`) are skipped, and `message_stop` terminates the stream.
+#
+# A generation can fail *after* the stream has opened: Anthropic then sends an `error` event
+# (or simply stops sending) while the transport still reports success. Both cases surface as
+# an `ai:Error` rather than a short, clean-looking result, so a caller can never mistake a
+# truncated answer for a complete one.
+#
+# The errors raised here deliberately carry no `cause`, and fold the underlying detail into
+# their message instead: a query expression (`from ... in stream do`) - the idiomatic way to
+# consume a stream - propagates an error's *cause* rather than the error itself, so a wrapped
+# error would reach the caller as an opaque `FromJsonStringError` and the explanation would
+# be lost.
 class AnthropicChunkIterator {
     private stream<http:SseEvent, error?> sseStream;
+    private observe:ChatSpan span;
     private string? id = ();
     private string? model = ();
     private int? inputTokens = ();
+    private boolean completed = false;
 
-    isolated function init(stream<http:SseEvent, error?> sseStream) {
+    isolated function init(stream<http:SseEvent, error?> sseStream, observe:ChatSpan span) {
         self.sseStream = sseStream;
+        self.span = span;
     }
 
     public isolated function next() returns record {|ai:ChatCompletionChunk value;|}|ai:Error? {
+        if self.isCompleted() {
+            return ();
+        }
         while true {
             record {|http:SseEvent value;|}|error? nextEvent = self.sseStream.next();
             if nextEvent is () {
-                return ();
+                // The transport ended without a `message_stop`, so the answer is truncated.
+                return self.failWith(error ai:LlmInvalidResponseError(
+                        "Model stream ended before the response was complete"));
             }
             if nextEvent is error {
-                return error ai:LlmError("Error while reading the model stream", nextEvent);
+                return self.failWith(error ai:LlmError(
+                        string `Error while reading the model stream: ${nextEvent.message()}`));
             }
 
             http:SseEvent sseEvent = nextEvent.value;
@@ -358,40 +390,121 @@ class AnthropicChunkIterator {
                 continue;
             }
             if event == "message_stop" {
+                self.complete();
                 return ();
             }
 
             json|error payload = rawData.fromJsonString();
             if payload is error {
-                continue;
+                return self.failWith(error ai:LlmInvalidResponseError(
+                        string `Invalid or malformed chunk received from the model: ${payload.message()}`));
+            }
+
+            if event == "error" {
+                return self.failWith(toStreamError(payload));
             }
 
             if event == "message_start" {
-                StreamMessageStart|error messageStart = payload.cloneWithType();
-                if messageStart is StreamMessageStart {
-                    self.id = messageStart.message.id;
-                    self.model = messageStart.message.model;
-                    self.inputTokens = messageStart.message.usage.input_tokens;
-                }
+                self.captureMessageMetadata(payload);
             }
 
             ai:ChatCompletionChunk?|error chunk = toAiChunk(event, payload, self.id, self.model, self.inputTokens);
             if chunk is error {
-                continue;
+                return self.failWith(error ai:LlmInvalidResponseError(
+                        string `Invalid or malformed '${event}' chunk received from the model: ${chunk.message()}`));
             }
             if chunk is ai:ChatCompletionChunk {
+                ai:FinishReason? finishReason = chunk.choices.length() > 0
+                    ? chunk.choices[0].finishReason : ();
+                if finishReason is ai:FinishReason {
+                    self.span.addFinishReason(finishReason);
+                    self.span.addOutputType(observe:TEXT);
+                }
                 return {value: chunk};
             }
         }
     }
 
+    # Captures the message id/model and prompt token count carried by `message_start`.
+    # This is metadata only, so a shape this provider does not recognize degrades the
+    # chunks' `id`/`model`/`usage` rather than failing the generation.
+    #
+    # + payload - The raw `message_start` payload
+    private isolated function captureMessageMetadata(json payload) {
+        StreamMessageStart|error messageStart = payload.cloneWithType();
+        if messageStart is StreamMessageStart {
+            self.id = messageStart.message.id;
+            self.model = messageStart.message.model;
+            self.inputTokens = messageStart.message.usage.input_tokens;
+        }
+    }
+
     public isolated function close() returns ai:Error? {
+        self.complete();
         error? result = self.sseStream.close();
         if result is error {
             return error ai:Error("Error while closing the model stream", result);
         }
         return ();
     }
+
+    private isolated function isCompleted() returns boolean {
+        lock {
+            return self.completed;
+        }
+    }
+
+    # Marks the stream finished and closes the observability span, exactly once.
+    private isolated function complete() {
+        if self.markCompleted() {
+            return;
+        }
+        self.span.close();
+    }
+
+    # Marks the stream finished, closes the span against `err`, and returns `err` so callers
+    # can `return self.failWith(...)` on every terminal error path.
+    #
+    # + err - The error that ended the stream
+    # + return - The same error
+    private isolated function failWith(ai:Error err) returns ai:Error {
+        if self.markCompleted() {
+            return err;
+        }
+        self.span.close(err);
+        return err;
+    }
+
+    # Marks the stream completed, returning whether it was already marked before this call.
+    private isolated function markCompleted() returns boolean {
+        lock {
+            boolean wasCompleted = self.completed;
+            self.completed = true;
+            return wasCompleted;
+        }
+    }
+}
+
+# Maps an Anthropic `error` streaming event onto an `ai:Error`, preserving the API's own
+# error type and message so the caller sees why generation stopped.
+#
+# + payload - The raw `error` event payload
+# + return - The corresponding `ai:Error`
+isolated function toStreamError(json payload) returns ai:Error {
+    StreamError|error streamError = payload.cloneWithType();
+    if streamError !is StreamError {
+        return error ai:LlmError("Model stream failed with an unrecognized error event");
+    }
+    StreamErrorDetail? detail = streamError.'error;
+    if detail is () {
+        return error ai:LlmError("Model stream failed");
+    }
+    string message = detail.message ?: "Model stream failed";
+    string? errorType = detail.'type;
+    if errorType is string {
+        return error ai:LlmError(string `Model stream failed with '${errorType}': ${message}`);
+    }
+    return error ai:LlmError(message);
 }
 
 # Builds the string stream behind the dependently-typed `generateStream`. The native
@@ -448,6 +561,51 @@ class ChunkTextIterator {
     public isolated function close() returns ai:Error? {
         return self.chunks.close();
     }
+}
+
+# Applies extended-thinking settings to a request payload: adds the `thinking` object when
+# configured, and sends `temperature` only when thinking is not active, because Anthropic
+# requires the default temperature with `enabled`/`adaptive` thinking.
+#
+# Shared by every request path (`chat`, `chatStream`, and `generate`) so that a configured
+# `thinkingConfig` cannot silently apply to some of them and not others.
+#
+# + requestPayload - The request payload to mutate in place
+# + thinkingConfig - The configured thinking settings, or `()` when thinking is off
+# + temperature - The temperature to send when thinking is not active
+isolated function applyThinkingConfig(map<json> requestPayload,
+        (readonly & ThinkingConfig)? thinkingConfig, decimal temperature) {
+    if thinkingConfig is ThinkingConfig {
+        requestPayload["thinking"] = thinkingConfig;
+    }
+    if thinkingConfig !is EnabledThinking|AdaptiveThinking {
+        requestPayload["temperature"] = temperature;
+    }
+}
+
+# Validates an extended-thinking configuration against the request's token budget.
+#
+# Anthropic requires `budget_tokens` to be at least 1024 and strictly less than the
+# request's `max_tokens`. Checking at construction turns what would otherwise be an opaque
+# HTTP failure on every subsequent call into an immediate, actionable error.
+#
+# + thinkingConfig - The configured thinking settings, or `()` when thinking is off
+# + maxTokens - The configured upper bound on response tokens
+# + return - An `ai:Error` describing the conflict, or `()` when the configuration is usable
+isolated function validateThinkingConfig(ThinkingConfig? thinkingConfig, int maxTokens) returns ai:Error? {
+    if thinkingConfig !is EnabledThinking {
+        return ();
+    }
+    int budget = thinkingConfig.budget_tokens;
+    if budget < MIN_THINKING_BUDGET_TOKENS {
+        return error ai:Error(string `Invalid thinking configuration: 'budget_tokens' must be at least ` +
+            string `${MIN_THINKING_BUDGET_TOKENS}, but found ${budget}.`);
+    }
+    if budget >= maxTokens {
+        return error ai:Error(string `Invalid thinking configuration: 'budget_tokens' (${budget}) must be ` +
+            string `less than 'maxTokens' (${maxTokens}). Increase 'maxTokens' above the thinking budget.`);
+    }
+    return ();
 }
 
 isolated function mapContentToFunctionCall(ContentBlock block) returns ai:FunctionCall|ai:LlmError {
