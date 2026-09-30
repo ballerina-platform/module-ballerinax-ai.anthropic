@@ -171,7 +171,7 @@ public isolated client class ModelProvider {
     # + tools - Tool definitions to be used for the tool call
     # + stop - Stop sequence to stop the completion
     # + return - A stream of normalized chat message chunks, or an error in case of failures
-    remote function chatAsStream(
+    isolated remote function chatAsStream(
             ai:ChatMessage[]|ai:ChatUserMessage messages,
             ai:ChatCompletionFunctions[] tools = [],
             string? stop = ())
@@ -227,7 +227,7 @@ public isolated client class ModelProvider {
     #
     # + prompt - The prompt to use in the chat request
     # + return - A stream of text fragments, or an error if generation fails
-    remote function generateAsStream(ai:Prompt prompt) returns stream<string, ai:Error?>|ai:Error {
+    isolated remote function generateAsStream(ai:Prompt prompt) returns stream<string, ai:Error?>|ai:Error {
         observe:GenerateContentSpan span = observe:createGenerateContentSpan(self.modelType);
         span.addProvider("anthropic");
         if self.thinkingConfig !is EnabledThinking|AdaptiveThinking {
@@ -268,7 +268,7 @@ public isolated client class ModelProvider {
 
     // Opens the SSE stream for `requestPayload`. The span is closed here if the connection
     // fails to open, and by the returned stream's iterator otherwise.
-    private function openChunkStream(map<json> requestPayload, map<string> headers, observe:ChatSpan|observe:GenerateContentSpan span)
+    private isolated function openChunkStream(map<json> requestPayload, map<string> headers, observe:ChatSpan|observe:GenerateContentSpan span)
             returns stream<ai:ChatMessageChunk, ai:Error?>|ai:Error {
         stream<http:SseEvent, error?>|error sseStream =
             self.AnthropicClient->/messages.post(requestPayload, headers);
