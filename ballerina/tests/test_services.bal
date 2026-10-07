@@ -17,6 +17,8 @@
 import ballerina/http;
 import ballerina/test;
 
+isolated json lastChatRequestMessages = ();
+
 service /llm on new http:Listener(8080) {
     resource function post anthropic/messages(map<json> payload)returns AnthropicApiResponse|error {
         test:assertEquals(payload["model"], CLAUDE_3_7_SONNET_20250219);
@@ -49,5 +51,21 @@ service /llm on new http:Listener(8080) {
         test:assertEquals(parameters, getExpectedParameterSchema(initialText),
                 string `Test failed for prompt with initial content, ${initialText}`);
         return getTestServiceResponse(initialText);
+    }
+
+    resource function post anthropic/chat/messages(map<json> payload) returns AnthropicApiResponse {
+        lock {
+            lastChatRequestMessages = payload["messages"].cloneReadOnly();
+        }
+        return {
+            id: "test-id",
+            model: CLAUDE_3_7_SONNET_20250219,
+            'type: "message",
+            stop_reason: "tool_use",
+            role: "assistant",
+            stop_sequence: (),
+            usage: {input_tokens: 10, output_tokens: 5},
+            content: [{'type: "tool_use", id: "toolu_response", name: "sum", input: {a: 4, b: 5}}]
+        };
     }
 }
