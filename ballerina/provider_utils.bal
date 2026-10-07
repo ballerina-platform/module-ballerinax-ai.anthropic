@@ -313,14 +313,18 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
 
     map<json>[] messages = [{role: ai:USER, "content": chatContent}];
     span.addInputMessages(messages);
+
     map<json> request = {
         messages,
         model: modelType,
         max_tokens: maxTokens,
-        temperature,
         tools,
         tool_choice: getGetResultsToolChoice()
     };
+
+    if supportsTemperature(modelType) {
+        request["temperature"] = temperature;
+    }
 
     map<string> headers = {
         "x-api-key": apiKey,
@@ -331,7 +335,7 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
 
     AnthropicApiResponse|error response = anthropicClient->/messages.post(request, headers);
     if response is error {
-        ai:Error err = error("LLM call failed: ", response);
+        ai:Error err = createLlmErrorFromHttpError(response);
         span.close(err);
         return err;
     }
@@ -383,6 +387,16 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
     return result;
 }
 
+isolated function createLlmErrorFromHttpError(error httpError) returns ai:Error {
+    if httpError is http:ApplicationResponseError {
+        http:Detail detail = httpError.detail();
+        return error ai:LlmInvalidResponseError(
+            string `Anthropic API request failed with status ${detail.statusCode}: ${detail.body.toString()}`,
+            httpError);
+    }
+    return error ai:LlmInvalidResponseError("Unexpected response format from Anthropic API", httpError);
+}
+
 isolated function getFunctionCallFromContentBlocks(ContentBlock[] blocks) returns ai:FunctionCall[]|ai:Error {
     ai:FunctionCall[] functionCalls = [];
     foreach ContentBlock block in blocks {
@@ -392,4 +406,8 @@ isolated function getFunctionCallFromContentBlocks(ContentBlock[] blocks) return
         }
     }
     return functionCalls;
+}
+
+isolated function supportsTemperature(string modelType) returns boolean {
+    return modelType != CLAUDE_OPUS_4_7 && modelType != CLAUDE_OPUS_4_8;
 }

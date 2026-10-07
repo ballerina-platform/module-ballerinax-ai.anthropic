@@ -19,7 +19,7 @@ import ballerina/test;
 
 const CHAT_SERVICE_URL = "http://localhost:8080/llm/anthropic/chat";
 
-final ModelProvider chatProvider = check new (API_KEY, CLAUDE_3_7_SONNET_20250219, CHAT_SERVICE_URL);
+final ModelProvider chatProvider = check new (API_KEY, CLAUDE_SONNET_4_6, CHAT_SERVICE_URL);
 
 isolated function getChatRequestMessages(string firstUserMessage) returns json {
     lock {
