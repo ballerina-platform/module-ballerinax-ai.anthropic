@@ -113,5 +113,6 @@ clean {
 build.dependsOn ':ai.anthropic-native:build'
 build.dependsOn ":ai.anthropic-compiler-plugin:build"
 build.dependsOn "generatePomFileForMavenPublication"
+test.dependsOn ':ai.anthropic-native:build'
 publishToMavenLocal.dependsOn build
 publish.dependsOn build
