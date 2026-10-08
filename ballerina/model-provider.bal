@@ -232,7 +232,7 @@ public isolated client class ModelProvider {
                     content.push(toolUse);
                 }
                 anthropicMessages.push({role: ai:ASSISTANT, content});
-            } else if message is ai:ChatFunctionMessage && message.content is string {
+            } else if message is ai:ChatFunctionMessage {
                 string? toolUseId = message.id;
                 if toolUseId is () {
                     // Include function results as user messages with special formatting

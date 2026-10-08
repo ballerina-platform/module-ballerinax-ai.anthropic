@@ -97,3 +97,18 @@ function testChatPreservesToolUseIdFromResponse() returns error? {
     ai:ChatAssistantMessage response = check chatProvider->chat([{role: ai:USER, content: "What is 4+5?"}]);
     test:assertEquals(response.toolCalls, [{name: "sum", arguments: {a: 4, b: 5}, id: "toolu_response"}]);
 }
+
+@test:Config
+function testChatSendsEmptyToolResultForFunctionMessageWithoutContent() returns error? {
+    ai:ChatMessage[] messages = [
+        {role: ai:USER, content: "Clear the cache"},
+        {role: ai:ASSISTANT, toolCalls: [{name: "clearCache", arguments: {}, id: "toolu_1"}]},
+        {role: "function", name: "clearCache", id: "toolu_1"}
+    ];
+    _ = check chatProvider->chat(messages);
+    test:assertEquals(getLastChatRequestMessages(), [
+        {role: "user", content: "Clear the cache"},
+        {role: "assistant", content: [{'type: "tool_use", id: "toolu_1", name: "clearCache", input: {}}]},
+        {role: "user", content: [{'type: "tool_result", tool_use_id: "toolu_1", content: ""}]}
+    ]);
+}
