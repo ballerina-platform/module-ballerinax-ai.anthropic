@@ -17,7 +17,7 @@
 import ballerina/http;
 import ballerina/test;
 
-isolated json lastChatRequestMessages = ();
+isolated map<json> chatRequestMessages = {};
 
 service /llm on new http:Listener(8080) {
     resource function post anthropic/messages(map<json> payload)returns AnthropicApiResponse|error {
@@ -53,9 +53,12 @@ service /llm on new http:Listener(8080) {
         return getTestServiceResponse(initialText);
     }
 
-    resource function post anthropic/chat/messages(map<json> payload) returns AnthropicApiResponse {
+    resource function post anthropic/chat/messages(map<json> payload) returns AnthropicApiResponse|error {
+        json[] messages = check payload["messages"].ensureType();
+        map<json> firstMessage = check messages[0].ensureType();
+        string key = firstMessage["content"].toString();
         lock {
-            lastChatRequestMessages = payload["messages"].cloneReadOnly();
+            chatRequestMessages[key] = messages.cloneReadOnly();
         }
         return {
             id: "test-id",

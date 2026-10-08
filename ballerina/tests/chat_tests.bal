@@ -21,9 +21,9 @@ const CHAT_SERVICE_URL = "http://localhost:8080/llm/anthropic/chat";
 
 final ModelProvider chatProvider = check new (API_KEY, CLAUDE_3_7_SONNET_20250219, CHAT_SERVICE_URL);
 
-isolated function getLastChatRequestMessages() returns json {
+isolated function getChatRequestMessages(string firstUserMessage) returns json {
     lock {
-        return lastChatRequestMessages.clone();
+        return chatRequestMessages[firstUserMessage].clone();
     }
 }
 
@@ -35,7 +35,7 @@ function testChatMapsToolCallHistoryToToolUseAndToolResultBlocks() returns error
         {role: "function", name: "sum", content: "4.0", id: "toolu_1"}
     ];
     _ = check chatProvider->chat(messages);
-    test:assertEquals(getLastChatRequestMessages(), [
+    test:assertEquals(getChatRequestMessages("What is 1+3-5?"), [
         {role: "user", content: "What is 1+3-5?"},
         {role: "assistant", content: [{'type: "tool_use", id: "toolu_1", name: "sum", input: {a: 1, b: 3}}]},
         {role: "user", content: [{'type: "tool_result", tool_use_id: "toolu_1", content: "4.0"}]}
@@ -58,7 +58,7 @@ function testChatGroupsToolResultsOfSameTurnIntoSingleUserMessage() returns erro
         {role: "function", name: "multiply", content: "10.0", id: "toolu_2"}
     ];
     _ = check chatProvider->chat(messages);
-    test:assertEquals(getLastChatRequestMessages(), [
+    test:assertEquals(getChatRequestMessages("What is 1+3 and 2*5?"), [
         {role: "user", content: "What is 1+3 and 2*5?"},
         {
             role: "assistant",
@@ -86,7 +86,7 @@ function testChatFallsBackToFunctionResultsTextForToolCallsWithoutIds() returns 
         {role: "function", name: "sum", content: "4.0"}
     ];
     _ = check chatProvider->chat(messages);
-    test:assertEquals(getLastChatRequestMessages(), [
+    test:assertEquals(getChatRequestMessages("What is 1+3?"), [
         {role: "user", content: "What is 1+3?"},
         {role: "user", content: string `<function_results>\nFunction: sum\nOutput: 4.0\n</function_results>`}
     ]);
@@ -106,7 +106,7 @@ function testChatSendsEmptyToolResultForFunctionMessageWithoutContent() returns 
         {role: "function", name: "clearCache", id: "toolu_1"}
     ];
     _ = check chatProvider->chat(messages);
-    test:assertEquals(getLastChatRequestMessages(), [
+    test:assertEquals(getChatRequestMessages("Clear the cache"), [
         {role: "user", content: "Clear the cache"},
         {role: "assistant", content: [{'type: "tool_use", id: "toolu_1", name: "clearCache", input: {}}]},
         {role: "user", content: [{'type: "tool_result", tool_use_id: "toolu_1", content: ""}]}
@@ -121,7 +121,7 @@ function testChatSkipsEmptyAssistantContent() returns error? {
         {role: ai:USER, content: "Are you there?"}
     ];
     _ = check chatProvider->chat(messages);
-    test:assertEquals(getLastChatRequestMessages(), [
+    test:assertEquals(getChatRequestMessages("Hi"), [
         {role: "user", content: "Hi"},
         {role: "user", content: "Are you there?"}
     ]);
