@@ -219,9 +219,8 @@ public isolated client class ModelProvider {
                 }
                 // Include tool calls as tool_use blocks so that the model sees its own calls in the history
                 MessageContentPart[] content = [];
-                string? text = message.content;
-                if text is string && text != "" {
-                    TextContentPart textPart = {text};
+                TextContentPart? textPart = buildTextContentPart(message.content ?: "");
+                if textPart is TextContentPart {
                     content.push(textPart);
                 }
                 foreach ai:FunctionCall toolCall in toolCalls {
