@@ -104,7 +104,32 @@ public enum ANTHROPIC_MODEL_NAMES {
 type AnthropicMessage record {|
     # Role of the participant in the conversation (e.g., "user" or "assistant")
     string role;
-    # The message content
+    # The message content, either plain text or a list of content blocks
+    string|MessageContentPart[] content;
+|};
+
+# Content block in an Anthropic API request message
+type MessageContentPart TextContentPart|ToolUseContentPart|ToolResultContentPart;
+
+# Tool use content block representing a tool call made by the model
+type ToolUseContentPart record {|
+    # The type of content
+    readonly string 'type = "tool_use";
+    # Unique identifier of the tool use
+    string id;
+    # Name of the tool being used
+    string name;
+    # Input parameters for the tool
+    map<json> input;
+|};
+
+# Tool result content block containing the output of a tool call
+type ToolResultContentPart record {|
+    # The type of content
+    readonly string 'type = "tool_result";
+    # Identifier of the tool use this result corresponds to
+    string tool_use_id;
+    # Output of the tool
     string content;
 |};
 
