@@ -208,10 +208,11 @@ public isolated client class ModelProvider {
                 ai:FunctionCall[]? toolCalls = message.toolCalls;
                 if toolCalls is () || toolCalls.length() == 0
                         || toolCalls.some(toolCall => toolCall.id is ()) {
-                    if message.content is string {
+                    string? text = message.content;
+                    if text is string && text != "" {
                         anthropicMessages.push({
                             role: ai:ASSISTANT,
-                            content: message.content ?: ""
+                            content: text
                         });
                     }
                     continue;

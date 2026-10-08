@@ -112,3 +112,17 @@ function testChatSendsEmptyToolResultForFunctionMessageWithoutContent() returns 
         {role: "user", content: [{'type: "tool_result", tool_use_id: "toolu_1", content: ""}]}
     ]);
 }
+
+@test:Config
+function testChatSkipsEmptyAssistantContent() returns error? {
+    ai:ChatMessage[] messages = [
+        {role: ai:USER, content: "Hi"},
+        {role: ai:ASSISTANT, content: ""},
+        {role: ai:USER, content: "Are you there?"}
+    ];
+    _ = check chatProvider->chat(messages);
+    test:assertEquals(getLastChatRequestMessages(), [
+        {role: "user", content: "Hi"},
+        {role: "user", content: "Are you there?"}
+    ]);
+}
