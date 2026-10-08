@@ -19,6 +19,7 @@ import ballerina/test;
 
 const SERVICE_URL = "http://localhost:8080/llm/anthropic";
 const TEMP_TEST_SERVICE_URL = "http://localhost:7070/temptest/anthropic";
+const GENERATE_TOOL_CHOICE_SERVICE_URL = "http://localhost:7070/temptest/generate";
 const TOOL_CHAT_SERVICE_URL = "http://localhost:9090/chat/anthropic";
 const API_KEY = "not-a-real-api-key";
 const ERROR_MESSAGE = "Error occurred while attempting to parse the response from the LLM as the expected type. Retrying and/or validating the prompt could fix the response.";
@@ -27,6 +28,8 @@ const RUNTIME_SCHEMA_NOT_SUPPORTED_ERROR_MESSAGE = "Runtime schema generation is
 final ModelProvider claudeProvider = check new (API_KEY, CLAUDE_SONNET_4_6, SERVICE_URL);
 final ModelProvider opus47TempProvider = check new (API_KEY, CLAUDE_OPUS_4_7, TEMP_TEST_SERVICE_URL);
 final ModelProvider opus48TempProvider = check new (API_KEY, CLAUDE_OPUS_4_8, TEMP_TEST_SERVICE_URL);
+final ModelProvider opus55TempProvider = check new (API_KEY, CLAUDE_OPUS_5_5, TEMP_TEST_SERVICE_URL);
+final ModelProvider sonnet55TempProvider = check new (API_KEY, CLAUDE_SONNET_5_5, TEMP_TEST_SERVICE_URL);
 final ModelProvider nonOpusTempProvider = check new (API_KEY, CLAUDE_SONNET_4_6, TEMP_TEST_SERVICE_URL);
 final ModelProvider chatTestProvider = check new (API_KEY, CLAUDE_SONNET_4_6, TOOL_CHAT_SERVICE_URL);
 
@@ -418,6 +421,50 @@ function testOpus48ChatOmitsTemperature() returns error? {
 }
 
 @test:Config
+function testModelInitializationWithOpus55() returns error? {
+    ModelProvider _ = check new (API_KEY, "claude-opus-5-5", SERVICE_URL);
+}
+
+@test:Config
+function testModelInitializationWithSonnet55() returns error? {
+    ModelProvider _ = check new (API_KEY, "claude-sonnet-5-5", SERVICE_URL);
+}
+
+@test:Config
+function testOpus55ChatOmitsTemperature() returns error? {
+    ai:ChatAssistantMessage result = check opus55TempProvider->chat({role: ai:USER, content: "Hello"});
+    test:assertEquals(result.content, "ok");
+}
+
+@test:Config
+function testSonnet55ChatOmitsTemperature() returns error? {
+    ai:ChatAssistantMessage result = check sonnet55TempProvider->chat({role: ai:USER, content: "Hello"});
+    test:assertEquals(result.content, "ok");
+}
+
+// Claude 5.5 models reject a forced `tool_choice`, so `generate` must fall back to `auto`.
+@test:Config
+function testGenerateWithOpus55UsesAutoToolChoice() returns error? {
+    ModelProvider provider = check new (API_KEY, CLAUDE_OPUS_5_5, GENERATE_TOOL_CHOICE_SERVICE_URL);
+    int result = check provider->generate(`Add 3 and 4`);
+    test:assertEquals(result, 7);
+}
+
+@test:Config
+function testGenerateWithSonnet55UsesAutoToolChoice() returns error? {
+    ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_5_5, GENERATE_TOOL_CHOICE_SERVICE_URL);
+    int result = check provider->generate(`Add 3 and 4`);
+    test:assertEquals(result, 7);
+}
+
+@test:Config
+function testGenerateWithOlderModelForcesToolChoice() returns error? {
+    ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_4_6, GENERATE_TOOL_CHOICE_SERVICE_URL);
+    int result = check provider->generate(`Add 3 and 4`);
+    test:assertEquals(result, 7);
+}
+
+@test:Config
 function testNonOpusChatIncludesTemperature() returns error? {
     ai:ChatAssistantMessage result = check nonOpusTempProvider->chat({role: ai:USER, content: "Hello"});
     test:assertEquals(result.content, "ok");
@@ -466,4 +513,35 @@ function testParallelToolCallSerialization() returns error? {
 
     ai:ChatAssistantMessage result = check chatTestProvider->chat(history);
     test:assertEquals(result.content, "The answers are 8 and 6.");
+}
+
+type NilableInt int?;
+type NilableBoolean boolean?;
+type NilableFloat float?;
+type NilableDecimal decimal?;
+type IntOrFloat int|float;
+type NilableString string?;
+
+function nilableAndMixedUnionTypes() returns map<[typedesc<json>, map<json>]> => {
+    "int?": [NilableInt, {"anyOf": [{"type": "integer"}, {"type": "null"}]}],
+    "boolean?": [NilableBoolean, {"anyOf": [{"type": "boolean"}, {"type": "null"}]}],
+    "float?": [NilableFloat, {"anyOf": [{"type": "number"}, {"type": "null"}]}],
+    "decimal?": [NilableDecimal, {"anyOf": [{"type": "number"}, {"type": "null"}]}],
+    "int|float": [IntOrFloat, {"anyOf": [{"type": "integer"}, {"type": "number"}]}],
+    "string?": [NilableString, {"anyOf": [{"type": "string"}, {"type": "null"}]}]
+};
+
+// Unions of simple types fit under the `string` type bit, so they used to be treated as a single simple
+// type and produced `{"type": null}`, which Anthropic rejects as an invalid tool schema.
+@test:Config {dataProvider: nilableAndMixedUnionTypes}
+function testSchemaForNilableAndMixedUnionTypes(typedesc<json> td, map<json> expectedSchema) returns error? {
+    map<json> schema = check generateJsonSchemaForTypedescAsJson(td);
+    test:assertEquals(schema, expectedSchema);
+}
+
+@test:Config
+function testSchemaForSimpleTypesIsUnchanged() returns error? {
+    test:assertEquals(check generateJsonSchemaForTypedescAsJson(int), {"type": "integer"});
+    test:assertEquals(check generateJsonSchemaForTypedescAsJson(string), {"type": "string"});
+    test:assertEquals(check generateJsonSchemaForTypedescAsJson(boolean), {"type": "boolean"});
 }

@@ -77,7 +77,8 @@ service /llm on new http:Listener(8080) {
 service /temptest on new http:Listener(7070) {
     resource function post anthropic/messages(map<json> payload) returns AnthropicApiResponse|error {
         string modelType = check payload["model"].ensureType();
-        if modelType == CLAUDE_OPUS_4_7 || modelType == CLAUDE_OPUS_4_8 {
+        if modelType == CLAUDE_OPUS_4_7 || modelType == CLAUDE_OPUS_4_8 ||
+                modelType == CLAUDE_OPUS_5_5 || modelType == CLAUDE_SONNET_5_5 {
             test:assertFalse(payload.hasKey("temperature"),
                 string `temperature must be absent for model: ${modelType}`);
         } else {
@@ -93,6 +94,30 @@ service /temptest on new http:Listener(7070) {
             stop_sequence: (),
             usage: {input_tokens: 10, output_tokens: 5},
             content: [{'type: "text", text: "ok"}]
+        };
+    }
+
+    resource function post generate/messages(map<json> payload) returns AnthropicApiResponse|error {
+        string modelType = check payload["model"].ensureType();
+        if modelType == CLAUDE_OPUS_5_5 || modelType == CLAUDE_SONNET_5_5 {
+            test:assertEquals(payload["tool_choice"], {'type: "auto"},
+                string `forced tool_choice must not be sent for model: ${modelType}`);
+            test:assertTrue(payload.hasKey("system"),
+                string `the getResults instruction must be sent for model: ${modelType}`);
+        } else {
+            test:assertEquals(payload["tool_choice"], {'type: "tool", name: "getResults"},
+                string `tool_choice must force getResults for model: ${modelType}`);
+            test:assertFalse(payload.hasKey("system"));
+        }
+        return {
+            id: "generate-test-id",
+            model: modelType,
+            'type: "message",
+            stop_reason: "tool_use",
+            role: ai:ASSISTANT,
+            stop_sequence: (),
+            usage: {input_tokens: 10, output_tokens: 5},
+            content: [{'type: "tool_use", id: "toolu_gen", name: "getResults", input: {result: 7}}]
         };
     }
 }

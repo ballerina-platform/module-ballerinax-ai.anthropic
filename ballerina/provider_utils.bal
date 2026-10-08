@@ -278,6 +278,10 @@ isolated function getGetResultsToolChoice() returns map<json> => {
     name: GET_RESULTS_TOOL
 };
 
+// Models that reject a forced `tool_choice` (`any`/`tool`) are steered to the tool from the prompt instead.
+const GET_RESULTS_TOOL_INSTRUCTION = "Respond only by calling the `" + GET_RESULTS_TOOL +
+    "` tool with your answer. Do not reply with plain text.";
+
 isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|ai:Error {
     json|error toolParams = parameters.cloneWithType();
     if toolParams is error {
@@ -318,9 +322,14 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
         messages,
         model: modelType,
         max_tokens: maxTokens,
-        tools,
-        tool_choice: getGetResultsToolChoice()
+        tools
     };
+    if supportsForcedToolChoice(modelType) {
+        request["tool_choice"] = getGetResultsToolChoice();
+    } else {
+        request["tool_choice"] = {'type: "auto"};
+        request["system"] = GET_RESULTS_TOOL_INSTRUCTION;
+    }
 
     if supportsTemperature(modelType) {
         request["temperature"] = temperature;
@@ -409,5 +418,10 @@ isolated function getFunctionCallFromContentBlocks(ContentBlock[] blocks) return
 }
 
 isolated function supportsTemperature(string modelType) returns boolean {
-    return modelType != CLAUDE_OPUS_4_7 && modelType != CLAUDE_OPUS_4_8;
+    return modelType != CLAUDE_OPUS_4_7 && modelType != CLAUDE_OPUS_4_8 &&
+        modelType != CLAUDE_OPUS_5_5 && modelType != CLAUDE_SONNET_5_5;
+}
+
+isolated function supportsForcedToolChoice(string modelType) returns boolean {
+    return modelType != CLAUDE_OPUS_5_5 && modelType != CLAUDE_SONNET_5_5;
 }
