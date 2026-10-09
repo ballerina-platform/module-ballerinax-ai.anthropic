@@ -278,6 +278,10 @@ isolated function getGetResultsToolChoice() returns map<json> => {
     name: GET_RESULTS_TOOL
 };
 
+// Models that reject a forced `tool_choice` (`any`/`tool`) are steered to the tool from the prompt instead.
+const GET_RESULTS_TOOL_INSTRUCTION = "Respond only by calling the `" + GET_RESULTS_TOOL +
+    "` tool with your answer. Do not reply with plain text.";
+
 isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|ai:Error {
     json|error toolParams = parameters.cloneWithType();
     if toolParams is error {
@@ -313,14 +317,23 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
 
     map<json>[] messages = [{role: ai:USER, "content": chatContent}];
     span.addInputMessages(messages);
+
     map<json> request = {
         messages,
         model: modelType,
         max_tokens: maxTokens,
-        temperature,
-        tools,
-        tool_choice: getGetResultsToolChoice()
+        tools
     };
+    if supportsForcedToolChoice(modelType) {
+        request["tool_choice"] = getGetResultsToolChoice();
+    } else {
+        request["tool_choice"] = {'type: "auto"};
+        request["system"] = GET_RESULTS_TOOL_INSTRUCTION;
+    }
+
+    if supportsTemperature(modelType) {
+        request["temperature"] = temperature;
+    }
 
     map<string> headers = {
         "x-api-key": apiKey,
@@ -331,7 +344,7 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
 
     AnthropicApiResponse|error response = anthropicClient->/messages.post(request, headers);
     if response is error {
-        ai:Error err = error("LLM call failed: ", response);
+        ai:Error err = createLlmErrorFromHttpError(response);
         span.close(err);
         return err;
     }
@@ -383,6 +396,16 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
     return result;
 }
 
+isolated function createLlmErrorFromHttpError(error httpError) returns ai:Error {
+    if httpError is http:ApplicationResponseError {
+        http:Detail detail = httpError.detail();
+        return error ai:LlmInvalidResponseError(
+            string `Anthropic API request failed with status ${detail.statusCode}: ${detail.body.toString()}`,
+            httpError);
+    }
+    return error ai:LlmInvalidResponseError("Unexpected response format from Anthropic API", httpError);
+}
+
 isolated function getFunctionCallFromContentBlocks(ContentBlock[] blocks) returns ai:FunctionCall[]|ai:Error {
     ai:FunctionCall[] functionCalls = [];
     foreach ContentBlock block in blocks {
@@ -392,4 +415,13 @@ isolated function getFunctionCallFromContentBlocks(ContentBlock[] blocks) return
         }
     }
     return functionCalls;
+}
+
+isolated function supportsTemperature(string modelType) returns boolean {
+    return modelType != CLAUDE_OPUS_4_7 && modelType != CLAUDE_OPUS_4_8 &&
+        modelType != CLAUDE_OPUS_5_5 && modelType != CLAUDE_SONNET_5_5;
+}
+
+isolated function supportsForcedToolChoice(string modelType) returns boolean {
+    return modelType != CLAUDE_OPUS_5_5 && modelType != CLAUDE_SONNET_5_5;
 }

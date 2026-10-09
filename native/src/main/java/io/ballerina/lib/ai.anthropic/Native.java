@@ -138,7 +138,9 @@ public class Native {
     }
 
     private static boolean isSimpleType(Type type) {
-        return type.getBasicType().all() <= 0b100000;
+        // Unions such as `int?` or `int|float` can still fit under the `string` bit, but they have no single
+        // JSON type name, so they must go through the `anyOf` path.
+        return !(type instanceof UnionType) && type.getBasicType().all() <= 0b100000;
     }
 
     private static String getStringRepresentation(Type type) {

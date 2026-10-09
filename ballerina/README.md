@@ -38,7 +38,7 @@ Here's how to initialize the Model Provider:
 import ballerina/ai;
 import ballerinax/ai.anthropic;
 
-final ai:ModelProvider anthropicModel = check new anthropic:ModelProvider("anthropicAiApiKey", anthropic:CLAUDE_3_7_SONNET_20250219, "2023-06-01");
+final ai:ModelProvider anthropicModel = check new anthropic:ModelProvider("anthropicAiApiKey", anthropic:CLAUDE_SONNET_4_6, "2023-06-01");
 ```
 
 ### Step 4: Invoke chat completion

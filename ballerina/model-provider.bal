@@ -20,7 +20,7 @@ import ballerina/http;
 import ballerina/jballerina.java;
 
 const DEFAULT_ANTHROPIC_SERVICE_URL = "https://api.anthropic.com/v1";
-const DEFAULT_MAX_TOKEN_COUNT = 512;
+const DEFAULT_MAX_TOKEN_COUNT = 4096;
 const DEFAULT_TEMPERATURE = 0.7d;
 const ANTHROPIC_API_VERSION = "2023-06-01";
 
@@ -106,9 +106,12 @@ public isolated client class ModelProvider {
         map<json> requestPayload = {
             model: self.modelType,
             max_tokens: self.maxTokens,
-            messages: anthropicMessages,
-            temperature: self.temperature
+            messages: anthropicMessages
         };
+
+        if supportsTemperature(self.modelType) {
+            requestPayload["temperature"] = self.temperature;
+        }
 
         if stop is string {
             span.addStopSequence(stop);
@@ -130,7 +133,7 @@ public isolated client class ModelProvider {
 
         AnthropicApiResponse|error anthropicResponse = self.AnthropicClient->/messages.post(requestPayload, headers);
         if anthropicResponse is error {
-            ai:Error err = error ai:LlmInvalidResponseError("Unexpected response format from Anthropic API", anthropicResponse);
+            ai:Error err = createLlmErrorFromHttpError(anthropicResponse);
             span.close(err);
             return err;
         }
@@ -198,7 +201,6 @@ public isolated client class ModelProvider {
                     content: check getChatMessageStringContent(message.content)
                 });
             } else if message is ai:ChatSystemMessage {
-                // Add a user message containing the system prompt
                 string content = check getChatMessageStringContent(message.content);
                 anthropicMessages.push({
                     role: ai:USER,
