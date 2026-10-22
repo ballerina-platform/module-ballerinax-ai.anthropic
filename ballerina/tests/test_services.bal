@@ -18,6 +18,7 @@ import ballerina/http;
 import ballerina/test;
 
 isolated map<json> chatRequestMessages = {};
+isolated map<json> capturedRequests = {};
 
 service /llm on new http:Listener(8080) {
     resource function post anthropic/messages(map<json> payload)returns AnthropicApiResponse|error {
@@ -69,6 +70,26 @@ service /llm on new http:Listener(8080) {
             stop_sequence: (),
             usage: {input_tokens: 10, output_tokens: 5},
             content: [{'type: "tool_use", id: "toolu_response", name: "sum", input: {a: 4, b: 5}}]
+        };
+    }
+
+    resource function post anthropic/capture/messages(map<json> payload) returns AnthropicApiResponse|error {
+        string model = check payload["model"].ensureType();
+        boolean isGenerateRequest = payload.hasKey("tool_choice");
+        lock {
+            capturedRequests[string `${model}:${isGenerateRequest ? "generate" : "chat"}`] = payload.cloneReadOnly();
+        }
+        return {
+            id: "test-id",
+            model,
+            'type: "message",
+            stop_reason: isGenerateRequest ? "tool_use" : "end_turn",
+            role: "assistant",
+            stop_sequence: (),
+            usage: {input_tokens: 10, output_tokens: 5},
+            content: isGenerateRequest
+                ? [{'type: "tool_use", id: "toolu_1", name: GET_RESULTS_TOOL, input: {result: 1}}]
+                : [{'type: "text", text: "Hello"}]
         };
     }
 

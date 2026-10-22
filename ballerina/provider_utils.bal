@@ -297,7 +297,6 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
             returns anydata|ai:Error {
     observe:GenerateContentSpan span = observe:createGenerateContentSpan(modelType);
     span.addProvider("anthropic");
-    span.addTemperature(temperature);
 
     DocumentContentPart[] chatContent;
     ResponseSchema responseSchema;
@@ -317,10 +316,13 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
         messages,
         model: modelType,
         max_tokens: maxTokens,
-        temperature,
         tools,
         tool_choice: getGetResultsToolChoice()
     };
+    if supportsTemperature(modelType) {
+        span.addTemperature(temperature);
+        request["temperature"] = temperature;
+    }
 
     map<string> headers = {
         "x-api-key": apiKey,
@@ -393,6 +395,8 @@ isolated function getFunctionCallFromContentBlocks(ContentBlock[] blocks) return
     }
     return functionCalls;
 }
+
+isolated function supportsTemperature(string modelType) returns boolean => modelType is TemperatureSupportedModel;
 
 isolated function createLlmErrorFromHttpError(error httpError) returns ai:Error {
     if httpError is http:ApplicationResponseError {

@@ -17,8 +17,39 @@
 import ballerina/ai;
 import ballerina/test;
 
+const CAPTURE_SERVICE_URL = "http://localhost:8080/llm/anthropic/capture";
 const ERROR_SERVICE_URL = "http://localhost:8080/llm/anthropic/failing";
 const MALFORMED_SERVICE_URL = "http://localhost:8080/llm/anthropic/malformed";
+
+isolated function getCapturedRequest(string model, string method) returns map<json>|error {
+    json request;
+    lock {
+        request = capturedRequests[string `${model}:${method}`].clone();
+    }
+    return request.cloneWithType();
+}
+
+@test:Config {
+    dataProvider: modelsWithoutTemperature
+}
+function testTemperatureIsOmittedForModelsThatDoNotSupportIt(ANTHROPIC_MODEL_NAMES model) returns error? {
+    ModelProvider provider = check new (API_KEY, model, CAPTURE_SERVICE_URL);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    int _ = check provider->generate(`Pick a number`);
+    test:assertFalse((check getCapturedRequest(model, "chat")).hasKey("temperature"));
+    test:assertFalse((check getCapturedRequest(model, "generate")).hasKey("temperature"));
+}
+
+function modelsWithoutTemperature() returns ANTHROPIC_MODEL_NAMES[][] => [[CLAUDE_OPUS_4_7], [CLAUDE_OPUS_4_8]];
+
+@test:Config
+function testTemperatureIsSentForModelsThatSupportIt() returns error? {
+    ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_4_6, CAPTURE_SERVICE_URL, temperature = 0.3);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    int _ = check provider->generate(`Pick a number`);
+    test:assertEquals((check getCapturedRequest(CLAUDE_SONNET_4_6, "chat"))["temperature"], 0.3d);
+    test:assertEquals((check getCapturedRequest(CLAUDE_SONNET_4_6, "generate"))["temperature"], 0.3d);
+}
 
 @test:Config
 function testApiErrorResponseIsIncludedInChatError() returns error? {
