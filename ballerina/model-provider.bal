@@ -130,7 +130,7 @@ public isolated client class ModelProvider {
 
         AnthropicApiResponse|error anthropicResponse = self.AnthropicClient->/messages.post(requestPayload, headers);
         if anthropicResponse is error {
-            ai:Error err = error ai:LlmInvalidResponseError("Unexpected response format from Anthropic API", anthropicResponse);
+            ai:Error err = createLlmErrorFromHttpError(anthropicResponse);
             span.close(err);
             return err;
         }

@@ -331,7 +331,7 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
 
     AnthropicApiResponse|error response = anthropicClient->/messages.post(request, headers);
     if response is error {
-        ai:Error err = error("LLM call failed: ", response);
+        ai:Error err = createLlmErrorFromHttpError(response);
         span.close(err);
         return err;
     }
@@ -392,4 +392,17 @@ isolated function getFunctionCallFromContentBlocks(ContentBlock[] blocks) return
         }
     }
     return functionCalls;
+}
+
+isolated function createLlmErrorFromHttpError(error httpError) returns ai:Error {
+    if httpError is http:ApplicationResponseError {
+        http:Detail detail = httpError.detail();
+        return error ai:LlmInvalidResponseError(
+            string `Anthropic API request failed with status ${detail.statusCode}: ${detail.body.toString()}`,
+            httpError);
+    }
+    if httpError is http:ClientError && httpError !is http:PayloadBindingError {
+        return error ai:LlmConnectionError("Error while connecting to the Anthropic API", httpError);
+    }
+    return error ai:LlmInvalidResponseError("Unexpected response format from Anthropic API", httpError);
 }

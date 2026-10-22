@@ -21,7 +21,7 @@ isolated map<json> chatRequestMessages = {};
 
 service /llm on new http:Listener(8080) {
     resource function post anthropic/messages(map<json> payload)returns AnthropicApiResponse|error {
-        test:assertEquals(payload["model"], CLAUDE_3_7_SONNET_20250219);
+        test:assertEquals(payload["model"], CLAUDE_SONNET_4_6);
         test:assertEquals(payload["max_tokens"], 512);
         test:assertEquals(payload["temperature"], 0.7d);
 
@@ -62,7 +62,7 @@ service /llm on new http:Listener(8080) {
         }
         return {
             id: "test-id",
-            model: CLAUDE_3_7_SONNET_20250219,
+            model: CLAUDE_SONNET_4_6,
             'type: "message",
             stop_reason: "tool_use",
             role: "assistant",
@@ -71,4 +71,15 @@ service /llm on new http:Listener(8080) {
             content: [{'type: "tool_use", id: "toolu_response", name: "sum", input: {a: 4, b: 5}}]
         };
     }
+
+    resource function post anthropic/failing/messages() returns http:NotFound {
+        return {
+            body: {
+                'type: "error",
+                'error: {'type: "not_found_error", message: "model: claude-3-7-sonnet-20250219"}
+            }
+        };
+    }
+
+    resource function post anthropic/malformed/messages() returns json => {unexpected: "format"};
 }
