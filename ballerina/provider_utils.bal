@@ -405,7 +405,7 @@ isolated function createLlmErrorFromHttpError(error httpError) returns ai:Error 
             string `Anthropic API request failed with status ${detail.statusCode}: ${detail.body.toString()}`,
             httpError);
     }
-    if httpError is http:ClientError && httpError !is http:PayloadBindingError {
+    if httpError is http:ClientConnectorError|http:ResiliencyError|http:SslError {
         return error ai:LlmConnectionError("Error while connecting to the Anthropic API", httpError);
     }
     return error ai:LlmInvalidResponseError("Unexpected response format from Anthropic API", httpError);

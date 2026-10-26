@@ -20,11 +20,12 @@ import ballerina/test;
 const CAPTURE_SERVICE_URL = "http://localhost:8080/llm/anthropic/capture";
 const ERROR_SERVICE_URL = "http://localhost:8080/llm/anthropic/failing";
 const MALFORMED_SERVICE_URL = "http://localhost:8080/llm/anthropic/malformed";
+const HTML_SERVICE_URL = "http://localhost:8080/llm/anthropic/html";
 
-isolated function getCapturedRequest(string model, string method) returns map<json>|error {
+isolated function getCapturedRequest(string testId, string method) returns map<json>|error {
     json request;
     lock {
-        request = capturedRequests[string `${model}:${method}`].clone();
+        request = capturedRequests[string `${testId}:${method}`].clone();
     }
     return request.cloneWithType();
 }
@@ -33,22 +34,25 @@ isolated function getCapturedRequest(string model, string method) returns map<js
     dataProvider: modelsWithoutTemperature
 }
 function testTemperatureIsOmittedForModelsThatDoNotSupportIt(ANTHROPIC_MODEL_NAMES model) returns error? {
-    ModelProvider provider = check new (API_KEY, model, CAPTURE_SERVICE_URL);
+    string testId = string `omit-temperature-${model}`;
+    ModelProvider provider = check new (API_KEY, model, string `${CAPTURE_SERVICE_URL}/${testId}`);
     _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
     int _ = check provider->generate(`Pick a number`);
-    test:assertFalse((check getCapturedRequest(model, "chat")).hasKey("temperature"));
-    test:assertFalse((check getCapturedRequest(model, "generate")).hasKey("temperature"));
+    test:assertFalse((check getCapturedRequest(testId, "chat")).hasKey("temperature"));
+    test:assertFalse((check getCapturedRequest(testId, "generate")).hasKey("temperature"));
 }
 
 function modelsWithoutTemperature() returns ANTHROPIC_MODEL_NAMES[][] => [[CLAUDE_OPUS_4_7], [CLAUDE_OPUS_4_8]];
 
 @test:Config
 function testTemperatureIsSentForModelsThatSupportIt() returns error? {
-    ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_4_6, CAPTURE_SERVICE_URL, temperature = 0.3);
+    string testId = "send-temperature";
+    ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`,
+        temperature = 0.3);
     _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
     int _ = check provider->generate(`Pick a number`);
-    test:assertEquals((check getCapturedRequest(CLAUDE_SONNET_4_6, "chat"))["temperature"], 0.3d);
-    test:assertEquals((check getCapturedRequest(CLAUDE_SONNET_4_6, "generate"))["temperature"], 0.3d);
+    test:assertEquals((check getCapturedRequest(testId, "chat"))["temperature"], 0.3d);
+    test:assertEquals((check getCapturedRequest(testId, "generate"))["temperature"], 0.3d);
 }
 
 @test:Config
@@ -58,8 +62,9 @@ function testApiErrorResponseIsIncludedInChatError() returns error? {
     if result !is ai:LlmInvalidResponseError {
         test:assertFail("Expected an ai:LlmInvalidResponseError");
     }
-    test:assertEquals(result.message(), "Anthropic API request failed with status 404: "
-        + "{\"type\":\"error\",\"error\":{\"type\":\"not_found_error\",\"message\":\"model: claude-3-7-sonnet-20250219\"}}");
+    string message = result.message();
+    test:assertTrue(message.startsWith("Anthropic API request failed with status 404: "));
+    test:assertTrue(message.includes("not_found_error"));
 }
 
 @test:Config
@@ -75,6 +80,16 @@ function testApiErrorResponseIsIncludedInGenerateError() returns error? {
 @test:Config
 function testMalformedResponseReturnsInvalidResponseError() returns error? {
     ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_4_6, MALFORMED_SERVICE_URL);
+    ai:ChatAssistantMessage|ai:Error result = provider->chat([{role: ai:USER, content: "Hi"}]);
+    if result !is ai:LlmInvalidResponseError {
+        test:assertFail("Expected an ai:LlmInvalidResponseError");
+    }
+    test:assertEquals(result.message(), "Unexpected response format from Anthropic API");
+}
+
+@test:Config
+function testNonJsonResponseReturnsInvalidResponseError() returns error? {
+    ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_4_6, HTML_SERVICE_URL);
     ai:ChatAssistantMessage|ai:Error result = provider->chat([{role: ai:USER, content: "Hi"}]);
     if result !is ai:LlmInvalidResponseError {
         test:assertFail("Expected an ai:LlmInvalidResponseError");

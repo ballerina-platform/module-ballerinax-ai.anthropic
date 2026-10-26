@@ -73,11 +73,12 @@ service /llm on new http:Listener(8080) {
         };
     }
 
-    resource function post anthropic/capture/messages(map<json> payload) returns AnthropicApiResponse|error {
+    resource function post anthropic/capture/[string testId]/messages(map<json> payload)
+            returns AnthropicApiResponse|error {
         string model = check payload["model"].ensureType();
         boolean isGenerateRequest = payload.hasKey("tool_choice");
         lock {
-            capturedRequests[string `${model}:${isGenerateRequest ? "generate" : "chat"}`] = payload.cloneReadOnly();
+            capturedRequests[string `${testId}:${isGenerateRequest ? "generate" : "chat"}`] = payload.cloneReadOnly();
         }
         return {
             id: "test-id",
@@ -103,4 +104,9 @@ service /llm on new http:Listener(8080) {
     }
 
     resource function post anthropic/malformed/messages() returns json => {unexpected: "format"};
+
+    resource function post anthropic/html/messages() returns http:Ok => {
+        body: "<html><body>Gateway page</body></html>",
+        mediaType: "text/html"
+    };
 }

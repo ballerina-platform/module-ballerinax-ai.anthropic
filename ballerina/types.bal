@@ -91,7 +91,7 @@ public enum ANTHROPIC_MODEL_NAMES {
     CLAUDE_OPUS_4_8 = "claude-opus-4-8",
     CLAUDE_SONNET_4_6 = "claude-sonnet-4-6",
     # # Deprecated
-    # Deprecated by Anthropic. See https://platform.claude.com/docs/en/about-claude/model-deprecations
+    # Retired by Anthropic. See https://platform.claude.com/docs/en/about-claude/model-deprecations
     @deprecated
     CLAUDE_OPUS_4_1_20250805 = "claude-opus-4-1-20250805",
     # # Deprecated
