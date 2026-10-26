@@ -30,10 +30,12 @@ isolated function getCapturedRequest(string testId, string method) returns map<j
     return request.cloneWithType();
 }
 
+function temperatureTestModels() returns ANTHROPIC_MODEL_NAMES[][] => [[CLAUDE_SONNET_4_6], [CLAUDE_OPUS_4_7]];
+
 @test:Config {
-    dataProvider: modelsWithoutTemperature
+    dataProvider: temperatureTestModels
 }
-function testTemperatureIsOmittedForModelsThatDoNotSupportIt(ANTHROPIC_MODEL_NAMES model) returns error? {
+function testTemperatureIsOmittedWhenNotSet(ANTHROPIC_MODEL_NAMES model) returns error? {
     string testId = string `omit-temperature-${model}`;
     ModelProvider provider = check new (API_KEY, model, string `${CAPTURE_SERVICE_URL}/${testId}`);
     _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
@@ -42,12 +44,12 @@ function testTemperatureIsOmittedForModelsThatDoNotSupportIt(ANTHROPIC_MODEL_NAM
     test:assertFalse((check getCapturedRequest(testId, "generate")).hasKey("temperature"));
 }
 
-function modelsWithoutTemperature() returns ANTHROPIC_MODEL_NAMES[][] => [[CLAUDE_OPUS_4_7], [CLAUDE_OPUS_4_8]];
-
-@test:Config
-function testTemperatureIsSentForModelsThatSupportIt() returns error? {
-    string testId = "send-temperature";
-    ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`,
+@test:Config {
+    dataProvider: temperatureTestModels
+}
+function testTemperatureIsSentWhenSet(ANTHROPIC_MODEL_NAMES model) returns error? {
+    string testId = string `send-temperature-${model}`;
+    ModelProvider provider = check new (API_KEY, model, string `${CAPTURE_SERVICE_URL}/${testId}`,
         temperature = 0.3);
     _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
     int _ = check provider->generate(`Pick a number`);

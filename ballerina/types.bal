@@ -132,13 +132,6 @@ public enum ANTHROPIC_MODEL_NAMES {
     CLAUDE_3_HAIKU_20240307 = "claude-3-haiku-20240307"
 }
 
-# Models that accept the `temperature` parameter. Newer models reject it, so it is sent only for these models.
-type TemperatureSupportedModel CLAUDE_SONNET_4_5|CLAUDE_SONNET_4_5_20250929|CLAUDE_HAIKU_4_5|CLAUDE_HAIKU_4_5_20251001
-    |CLAUDE_OPUS_4_5|CLAUDE_OPUS_4_5_20251101|CLAUDE_OPUS_4_6|CLAUDE_SONNET_4_6|CLAUDE_OPUS_4_1_20250805
-    |CLAUDE_OPUS_4_20250514|CLAUDE_SONNET_4_20250514|CLAUDE_3_7_SONNET_20250219|CLAUDE_3_5_HAIKU_20241022
-    |CLAUDE_3_5_SONNET_20241022|CLAUDE_3_5_SONNET_20240620|CLAUDE_3_OPUS_20240229|CLAUDE_3_SONNET_20240229
-    |CLAUDE_3_HAIKU_20240307;
-
 # Anthropic API request message format
 type AnthropicMessage record {|
     # Role of the participant in the conversation (e.g., "user" or "assistant")

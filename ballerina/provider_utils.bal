@@ -293,7 +293,7 @@ isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|ai
 }
 
 isolated function generateLlmResponse(http:Client anthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType,
-        int maxTokens, decimal temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc)
+        int maxTokens, decimal? temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc)
             returns anydata|ai:Error {
     observe:GenerateContentSpan span = observe:createGenerateContentSpan(modelType);
     span.addProvider("anthropic");
@@ -319,7 +319,7 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
         tools,
         tool_choice: getGetResultsToolChoice()
     };
-    if supportsTemperature(modelType) {
+    if temperature is decimal {
         span.addTemperature(temperature);
         request["temperature"] = temperature;
     }
@@ -395,8 +395,6 @@ isolated function getFunctionCallFromContentBlocks(ContentBlock[] blocks) return
     }
     return functionCalls;
 }
-
-isolated function supportsTemperature(string modelType) returns boolean => modelType is TemperatureSupportedModel;
 
 isolated function createLlmErrorFromHttpError(error httpError) returns ai:Error {
     if httpError is http:ApplicationResponseError {
