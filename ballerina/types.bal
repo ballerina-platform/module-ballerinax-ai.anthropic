@@ -80,7 +80,15 @@ public type ConnectionConfig record {|
 # Models types for Anthropic
 @display {label: "Anthropic Model Names"}
 public enum ANTHROPIC_MODEL_NAMES {
+    # # Deprecated
+    # Deprecated by Anthropic, retiring on November 30, 2026.
+    # See https://platform.claude.com/docs/en/about-claude/model-deprecations
+    @deprecated
     CLAUDE_SONNET_4_5 = "claude-sonnet-4-5",
+    # # Deprecated
+    # Deprecated by Anthropic, retiring on November 30, 2026.
+    # See https://platform.claude.com/docs/en/about-claude/model-deprecations
+    @deprecated
     CLAUDE_SONNET_4_5_20250929 = "claude-sonnet-4-5-20250929",
     CLAUDE_HAIKU_4_5 = "claude-haiku-4-5",
     CLAUDE_HAIKU_4_5_20251001 = "claude-haiku-4-5-20251001",
@@ -89,15 +97,7 @@ public enum ANTHROPIC_MODEL_NAMES {
     CLAUDE_OPUS_4_6 = "claude-opus-4-6",
     CLAUDE_OPUS_4_7 = "claude-opus-4-7",
     CLAUDE_OPUS_4_8 = "claude-opus-4-8",
-    CLAUDE_SONNET_4_6 = "claude-sonnet-4-6",
-    # # Deprecated
-    # Deprecated by Anthropic. See https://platform.claude.com/docs/en/about-claude/model-deprecations
-    @deprecated
-    CLAUDE_OPUS_4_20250514 = "claude-opus-4-20250514",
-    # # Deprecated
-    # Deprecated by Anthropic. See https://platform.claude.com/docs/en/about-claude/model-deprecations
-    @deprecated
-    CLAUDE_SONNET_4_20250514 = "claude-sonnet-4-20250514"
+    CLAUDE_SONNET_4_6 = "claude-sonnet-4-6"
 }
 
 # Anthropic API request message format
