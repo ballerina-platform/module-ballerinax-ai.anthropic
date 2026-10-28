@@ -293,11 +293,10 @@ isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|ai
 }
 
 isolated function generateLlmResponse(http:Client anthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType,
-        int maxTokens, decimal temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc)
+        int maxTokens, decimal? temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc)
             returns anydata|ai:Error {
     observe:GenerateContentSpan span = observe:createGenerateContentSpan(modelType);
     span.addProvider("anthropic");
-    span.addTemperature(temperature);
 
     DocumentContentPart[] chatContent;
     ResponseSchema responseSchema;
@@ -317,10 +316,13 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
         messages,
         model: modelType,
         max_tokens: maxTokens,
-        temperature,
         tools,
         tool_choice: getGetResultsToolChoice()
     };
+    if temperature is decimal {
+        span.addTemperature(temperature);
+        request["temperature"] = temperature;
+    }
 
     map<string> headers = {
         "x-api-key": apiKey,
@@ -331,7 +333,7 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
 
     AnthropicApiResponse|error response = anthropicClient->/messages.post(request, headers);
     if response is error {
-        ai:Error err = error("LLM call failed: ", response);
+        ai:Error err = createLlmErrorFromHttpError(response);
         span.close(err);
         return err;
     }
@@ -392,4 +394,17 @@ isolated function getFunctionCallFromContentBlocks(ContentBlock[] blocks) return
         }
     }
     return functionCalls;
+}
+
+isolated function createLlmErrorFromHttpError(error httpError) returns ai:Error {
+    if httpError is http:ApplicationResponseError {
+        http:Detail detail = httpError.detail();
+        return error ai:LlmInvalidResponseError(
+            string `Anthropic API request failed with status ${detail.statusCode}: ${detail.body.toString()}`,
+            httpError);
+    }
+    if httpError is http:ClientConnectorError|http:ResiliencyError|http:SslError {
+        return error ai:LlmConnectionError("Error while connecting to the Anthropic API", httpError);
+    }
+    return error ai:LlmInvalidResponseError("Unexpected response format from Anthropic API", httpError);
 }

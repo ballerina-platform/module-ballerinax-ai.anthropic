@@ -18,12 +18,13 @@ import ballerina/http;
 import ballerina/test;
 
 isolated map<json> chatRequestMessages = {};
+isolated map<json> capturedRequests = {};
 
 service /llm on new http:Listener(8080) {
     resource function post anthropic/messages(map<json> payload)returns AnthropicApiResponse|error {
-        test:assertEquals(payload["model"], CLAUDE_3_7_SONNET_20250219);
+        test:assertEquals(payload["model"], CLAUDE_SONNET_4_6);
         test:assertEquals(payload["max_tokens"], 512);
-        test:assertEquals(payload["temperature"], 0.7d);
+        test:assertFalse(payload.hasKey("temperature"));
 
         json[] messages = check payload["messages"].ensureType();
         map<json> message = check messages[0].ensureType();
@@ -62,7 +63,7 @@ service /llm on new http:Listener(8080) {
         }
         return {
             id: "test-id",
-            model: CLAUDE_3_7_SONNET_20250219,
+            model: CLAUDE_SONNET_4_6,
             'type: "message",
             stop_reason: "tool_use",
             role: "assistant",
@@ -71,4 +72,41 @@ service /llm on new http:Listener(8080) {
             content: [{'type: "tool_use", id: "toolu_response", name: "sum", input: {a: 4, b: 5}}]
         };
     }
+
+    resource function post anthropic/capture/[string testId]/messages(map<json> payload)
+            returns AnthropicApiResponse|error {
+        string model = check payload["model"].ensureType();
+        boolean isGenerateRequest = payload.hasKey("tool_choice");
+        lock {
+            capturedRequests[string `${testId}:${isGenerateRequest ? "generate" : "chat"}`] = payload.cloneReadOnly();
+        }
+        return {
+            id: "test-id",
+            model,
+            'type: "message",
+            stop_reason: isGenerateRequest ? "tool_use" : "end_turn",
+            role: "assistant",
+            stop_sequence: (),
+            usage: {input_tokens: 10, output_tokens: 5},
+            content: isGenerateRequest
+                ? [{'type: "tool_use", id: "toolu_1", name: GET_RESULTS_TOOL, input: {result: 1}}]
+                : [{'type: "text", text: "Hello"}]
+        };
+    }
+
+    resource function post anthropic/failing/messages() returns http:NotFound {
+        return {
+            body: {
+                'type: "error",
+                'error: {'type: "not_found_error", message: "model: claude-3-7-sonnet-20250219"}
+            }
+        };
+    }
+
+    resource function post anthropic/malformed/messages() returns json => {unexpected: "format"};
+
+    resource function post anthropic/html/messages() returns http:Ok => {
+        body: "<html><body>Gateway page</body></html>",
+        mediaType: "text/html"
+    };
 }
