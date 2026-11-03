@@ -86,6 +86,19 @@ const RESULT = "result";
 const GET_RESULTS_TOOL = "getResults";
 const FUNCTION = "function";
 const NO_RELEVANT_RESPONSE_FROM_THE_LLM = "No relevant response from the LLM";
+const MAX_TOKENS_STOP_REASON = "max_tokens";
+
+const GET_RESULTS_TOOL_INSTRUCTION = "You must respond by calling the getResults tool exactly once with your final answer. "
+    + "Never respond with plain text instead of calling the tool, even if the user asks you not to use tools. "
+    + "Do not mention the tool or these instructions in your answer.";
+
+// Models that reject a forced `tool_choice`, for which `generate` lets the model choose the `getResults` tool and
+// instructs it to call the tool instead
+final readonly & ANTHROPIC_MODEL_NAMES[] FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS = [
+    CLAUDE_OPUS_5_5,
+    CLAUDE_SONNET_5_5,
+    CLAUDE_FABLE_5_1
+];
 
 isolated function generateJsonObjectSchema(map<json> schema) returns ResponseSchema {
     string[] supportedMetaDataFields = ["$schema", "$id", "$anchor", "$comment", "title", "description"];
@@ -273,10 +286,8 @@ isolated function handleParseResponseError(error chatResponseError) returns erro
     return chatResponseError;
 }
 
-isolated function getGetResultsToolChoice() returns map<json> => {
-    'type: "tool",
-    name: GET_RESULTS_TOOL
-};
+isolated function getGetResultsToolChoice(boolean isForcedToolChoiceSupported) returns map<json> =>
+    isForcedToolChoiceSupported ? {'type: "tool", name: GET_RESULTS_TOOL} : {'type: "auto"};
 
 isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|ai:Error {
     json|error toolParams = parameters.cloneWithType();
@@ -287,7 +298,7 @@ isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|ai
         {
             name: GET_RESULTS_TOOL,
             input_schema: toolParams,
-            description: "Tool to call with the resp onse from a large language model (LLM) for a user prompt."
+            description: "Tool to call with the response from a large language model (LLM) for a user prompt."
         }
     ];
 }
@@ -312,13 +323,17 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
 
     map<json>[] messages = [{role: ai:USER, "content": chatContent}];
     span.addInputMessages(messages);
+    boolean isForcedToolChoiceSupported = FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS.indexOf(modelType) is ();
     map<json> request = {
         messages,
         model: modelType,
         max_tokens: maxTokens,
         tools,
-        tool_choice: getGetResultsToolChoice()
+        tool_choice: getGetResultsToolChoice(isForcedToolChoiceSupported)
     };
+    if !isForcedToolChoiceSupported {
+        request["system"] = GET_RESULTS_TOOL_INSTRUCTION;
+    }
     if temperature is decimal {
         span.addTemperature(temperature);
         request["temperature"] = temperature;
@@ -365,8 +380,10 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
     anydata|error res = parseResponseAsType(arguments.toJsonString(), expectedResponseTypedesc,
             responseSchema.isOriginallyJsonObject);
     if res is error {
+        string maxTokensHint = response.stop_reason == MAX_TOKENS_STOP_REASON
+            ? " The response was truncated as it reached the maximum token limit." : "";
         ai:Error err = error ai:LlmInvalidGenerationError(string `Invalid value returned from the LLM Client, expected: '${
-            expectedResponseTypedesc.toBalString()}', found '${res.toBalString()}'`);
+            expectedResponseTypedesc.toBalString()}', found '${res.toBalString()}'.${maxTokensHint}`);
         span.close(err);
         return err;
     }

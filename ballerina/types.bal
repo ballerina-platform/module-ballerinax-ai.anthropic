@@ -97,7 +97,14 @@ public enum ANTHROPIC_MODEL_NAMES {
     CLAUDE_OPUS_4_6 = "claude-opus-4-6",
     CLAUDE_OPUS_4_7 = "claude-opus-4-7",
     CLAUDE_OPUS_4_8 = "claude-opus-4-8",
-    CLAUDE_SONNET_4_6 = "claude-sonnet-4-6"
+    CLAUDE_SONNET_4_6 = "claude-sonnet-4-6",
+    CLAUDE_HAIKU_5_5 = "claude-haiku-5-5",
+    CLAUDE_SONNET_5 = "claude-sonnet-5",
+    CLAUDE_SONNET_5_5 = "claude-sonnet-5-5",
+    CLAUDE_OPUS_5 = "claude-opus-5",
+    CLAUDE_OPUS_5_5 = "claude-opus-5-5",
+    CLAUDE_FABLE_5 = "claude-fable-5",
+    CLAUDE_FABLE_5_1 = "claude-fable-5-1"
 }
 
 # Anthropic API request message format

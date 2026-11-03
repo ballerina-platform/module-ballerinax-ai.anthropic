@@ -21,6 +21,11 @@ const CAPTURE_SERVICE_URL = "http://localhost:8080/llm/anthropic/capture";
 const ERROR_SERVICE_URL = "http://localhost:8080/llm/anthropic/failing";
 const MALFORMED_SERVICE_URL = "http://localhost:8080/llm/anthropic/malformed";
 const HTML_SERVICE_URL = "http://localhost:8080/llm/anthropic/html";
+const TRUNCATED_SERVICE_URL = "http://localhost:8080/llm/anthropic/truncated";
+const NO_TOOL_CALL_SERVICE_URL = "http://localhost:8080/llm/anthropic/notool";
+const THINKING_SERVICE_URL = "http://localhost:8080/llm/anthropic/thinking";
+const MULTIPLE_TOOLS_SERVICE_URL = "http://localhost:8080/llm/anthropic/multipletools";
+const INVALID_ARGS_SERVICE_URL = "http://localhost:8080/llm/anthropic/invalidargs";
 
 isolated function getCapturedRequest(string testId, string method) returns map<json>|error {
     json request;
@@ -55,6 +60,114 @@ function testTemperatureIsSentWhenSet(ANTHROPIC_MODEL_NAMES model) returns error
     int _ = check provider->generate(`Pick a number`);
     test:assertEquals((check getCapturedRequest(testId, "chat"))["temperature"], 0.3d);
     test:assertEquals((check getCapturedRequest(testId, "generate"))["temperature"], 0.3d);
+}
+
+function autoToolChoiceModels() returns ANTHROPIC_MODEL_NAMES[][] =>
+    [[CLAUDE_OPUS_5_5], [CLAUDE_SONNET_5_5], [CLAUDE_FABLE_5_1]];
+
+function forcedToolChoiceModels() returns ANTHROPIC_MODEL_NAMES[][] =>
+    [[CLAUDE_SONNET_4_6], [CLAUDE_OPUS_4_8], [CLAUDE_HAIKU_5_5], [CLAUDE_SONNET_5], [CLAUDE_OPUS_5], [CLAUDE_FABLE_5]];
+
+@test:Config {
+    dataProvider: autoToolChoiceModels
+}
+function testGenerateUsesAutoToolChoiceForModelsWithoutForcedToolChoice(ANTHROPIC_MODEL_NAMES model) returns error? {
+    string testId = string `auto-tool-choice-${model}`;
+    ModelProvider provider = check new (API_KEY, model, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    int result = check provider->generate(`Pick a number`);
+    test:assertEquals(result, 1);
+
+    map<json> request = check getCapturedRequest(testId, "generate");
+    test:assertEquals(check request.tool_choice, {'type: "auto"});
+    test:assertEquals(check request.system, GET_RESULTS_TOOL_INSTRUCTION);
+    json[] tools = check request.tools.ensureType();
+    test:assertEquals(check tools[0].name, GET_RESULTS_TOOL);
+}
+
+@test:Config {
+    dataProvider: forcedToolChoiceModels
+}
+function testGenerateUsesForcedToolChoiceForOtherModels(ANTHROPIC_MODEL_NAMES model) returns error? {
+    string testId = string `forced-tool-choice-${model}`;
+    ModelProvider provider = check new (API_KEY, model, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    int result = check provider->generate(`Pick a number`);
+    test:assertEquals(result, 1);
+
+    map<json> request = check getCapturedRequest(testId, "generate");
+    test:assertEquals(check request.tool_choice, {'type: "tool", name: GET_RESULTS_TOOL});
+    test:assertFalse(request.hasKey("system"));
+}
+
+@test:Config
+function testDefaultMaxTokens() returns error? {
+    string testId = "default-max-tokens";
+    ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    int _ = check provider->generate(`Pick a number`);
+    test:assertEquals((check getCapturedRequest(testId, "chat"))["max_tokens"], 4096);
+    test:assertEquals((check getCapturedRequest(testId, "generate"))["max_tokens"], 4096);
+}
+
+@test:Config
+function testTruncatedResponseReturnsMaxTokensHint() returns error? {
+    ModelProvider provider = check new (API_KEY, CLAUDE_OPUS_5_5, TRUNCATED_SERVICE_URL);
+    int[]|ai:Error result = provider->generate(`List some numbers`);
+    if result !is ai:LlmInvalidGenerationError {
+        test:assertFail("Expected an ai:LlmInvalidGenerationError");
+    }
+    test:assertTrue(result.message().endsWith("The response was truncated as it reached the maximum token limit."));
+}
+
+@test:Config
+function testGenerateIgnoresThinkingAndTextBlocksBeforeToolCall() returns error? {
+    ModelProvider provider = check new (API_KEY, CLAUDE_OPUS_5_5, THINKING_SERVICE_URL);
+    int result = check provider->generate(`Pick a number`);
+    test:assertEquals(result, 42);
+}
+
+@test:Config
+function testGenerateUsesFirstToolCallWhenMultipleAreReturned() returns error? {
+    ModelProvider provider = check new (API_KEY, CLAUDE_OPUS_5_5, MULTIPLE_TOOLS_SERVICE_URL);
+    int result = check provider->generate(`Pick a number`);
+    test:assertEquals(result, 7);
+}
+
+@test:Config
+function testGenerateWithInvalidToolArgumentsReturnsError() returns error? {
+    ModelProvider provider = check new (API_KEY, CLAUDE_OPUS_5_5, INVALID_ARGS_SERVICE_URL);
+    int|ai:Error result = provider->generate(`Pick a number`);
+    if result !is ai:LlmInvalidGenerationError {
+        test:assertFail("Expected an ai:LlmInvalidGenerationError");
+    }
+    test:assertFalse(result.message().includes("truncated"));
+}
+
+@test:Config {
+    dataProvider: autoToolChoiceModels
+}
+function testAutoToolChoiceRequestWithDocument(ANTHROPIC_MODEL_NAMES model) returns error? {
+    string testId = string `auto-tool-choice-doc-${model}`;
+    ModelProvider provider = check new (API_KEY, model, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    ai:TextDocument doc = {content: "The meeting is in room 1."};
+    int _ = check provider->generate(`Which room is mentioned in ${doc}?`);
+
+    map<json> request = check getCapturedRequest(testId, "generate");
+    test:assertEquals(check request.tool_choice, {'type: "auto"});
+    test:assertEquals(check request.system, GET_RESULTS_TOOL_INSTRUCTION);
+    test:assertFalse(request.hasKey("temperature"));
+    json[] messages = check request.messages.ensureType();
+    test:assertEquals(messages.length(), 1);
+    test:assertEquals(check messages[0].role, "user");
+}
+
+@test:Config
+function testGenerateWithoutToolCallReturnsError() returns error? {
+    ModelProvider provider = check new (API_KEY, CLAUDE_OPUS_5_5, NO_TOOL_CALL_SERVICE_URL);
+    int|ai:Error result = provider->generate(`Pick a number`);
+    if result !is ai:Error {
+        test:assertFail("Expected an ai:Error");
+    }
+    test:assertEquals(result.message(), "No relevant response from the LLM");
 }
 
 @test:Config
