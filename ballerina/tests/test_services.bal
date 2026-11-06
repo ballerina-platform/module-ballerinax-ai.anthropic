@@ -23,7 +23,7 @@ isolated map<json> capturedRequests = {};
 service /llm on new http:Listener(8080) {
     resource function post anthropic/messages(map<json> payload)returns AnthropicApiResponse|error {
         test:assertEquals(payload["model"], CLAUDE_SONNET_4_6);
-        test:assertEquals(payload["max_tokens"], 512);
+        test:assertEquals(payload["max_tokens"], 4096);
         test:assertFalse(payload.hasKey("temperature"));
 
         json[] messages = check payload["messages"].ensureType();
@@ -93,6 +93,68 @@ service /llm on new http:Listener(8080) {
                 : [{'type: "text", text: "Hello"}]
         };
     }
+
+    resource function post anthropic/truncated/messages() returns AnthropicApiResponse => {
+        id: "test-id",
+        model: CLAUDE_OPUS_5_5,
+        'type: "message",
+        stop_reason: "max_tokens",
+        role: "assistant",
+        stop_sequence: (),
+        usage: {input_tokens: 10, output_tokens: 4096},
+        content: [{'type: "tool_use", id: "toolu_1", name: GET_RESULTS_TOOL, input: {}}]
+    };
+
+    resource function post anthropic/thinking/messages() returns AnthropicApiResponse => {
+        id: "test-id",
+        model: CLAUDE_OPUS_5_5,
+        'type: "message",
+        stop_reason: "tool_use",
+        role: "assistant",
+        stop_sequence: (),
+        usage: {input_tokens: 10, output_tokens: 5},
+        content: [
+            {'type: "thinking", "thinking": "", "signature": "sig"},
+            {'type: "text", text: "I'll provide the answer using the getResults tool."},
+            {'type: "tool_use", id: "toolu_1", name: GET_RESULTS_TOOL, input: {result: 42}}
+        ]
+    };
+
+    resource function post anthropic/multipletools/messages() returns AnthropicApiResponse => {
+        id: "test-id",
+        model: CLAUDE_OPUS_5_5,
+        'type: "message",
+        stop_reason: "tool_use",
+        role: "assistant",
+        stop_sequence: (),
+        usage: {input_tokens: 10, output_tokens: 5},
+        content: [
+            {'type: "tool_use", id: "toolu_1", name: GET_RESULTS_TOOL, input: {result: 7}},
+            {'type: "tool_use", id: "toolu_2", name: GET_RESULTS_TOOL, input: {result: 8}}
+        ]
+    };
+
+    resource function post anthropic/invalidargs/messages() returns AnthropicApiResponse => {
+        id: "test-id",
+        model: CLAUDE_OPUS_5_5,
+        'type: "message",
+        stop_reason: "tool_use",
+        role: "assistant",
+        stop_sequence: (),
+        usage: {input_tokens: 10, output_tokens: 5},
+        content: [{'type: "tool_use", id: "toolu_1", name: GET_RESULTS_TOOL, input: {result: "not a number"}}]
+    };
+
+    resource function post anthropic/notool/messages() returns AnthropicApiResponse => {
+        id: "test-id",
+        model: CLAUDE_OPUS_5_5,
+        'type: "message",
+        stop_reason: "end_turn",
+        role: "assistant",
+        stop_sequence: (),
+        usage: {input_tokens: 10, output_tokens: 5},
+        content: [{'type: "text", text: "The answer is 1."}]
+    };
 
     resource function post anthropic/failing/messages() returns http:NotFound {
         return {
