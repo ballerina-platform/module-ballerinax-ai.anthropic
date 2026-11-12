@@ -73,12 +73,14 @@ service /llm on new http:Listener(8080) {
         };
     }
 
-    resource function post anthropic/capture/[string testId]/messages(map<json> payload)
-            returns AnthropicApiResponse|error {
+    resource function post anthropic/capture/[string testId]/messages(map<json> payload,
+            @http:Header {name: "anthropic-version"} string apiVersion) returns AnthropicApiResponse|error {
         string model = check payload["model"].ensureType();
         boolean isGenerateRequest = payload.hasKey("tool_choice");
+        string method = isGenerateRequest ? "generate" : "chat";
         lock {
-            capturedRequests[string `${testId}:${isGenerateRequest ? "generate" : "chat"}`] = payload.cloneReadOnly();
+            capturedRequests[string `${testId}:${method}`] = payload.cloneReadOnly();
+            capturedRequests[string `${testId}:${method}:anthropic-version`] = apiVersion;
         }
         return {
             id: "test-id",

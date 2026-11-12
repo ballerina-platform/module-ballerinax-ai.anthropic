@@ -107,6 +107,17 @@ public enum ANTHROPIC_MODEL_NAMES {
     CLAUDE_FABLE_5_1 = "claude-fable-5-1"
 }
 
+# Anthropic API versions, sent in the `anthropic-version` request header.
+# See https://platform.claude.com/docs/en/api/versioning
+@display {label: "Anthropic API Version"}
+public enum ANTHROPIC_API_VERSIONS {
+    # The long-standing API version. The default.
+    API_VERSION_2023_06_01 = "2023-06-01",
+    # Rejects `temperature` on every model, so the connector does not send it on this version.
+    # See https://platform.claude.com/docs/en/api/migration-2026-10-21
+    API_VERSION_2026_10_21 = "2026-10-21"
+}
+
 # Anthropic API request message format
 type AnthropicMessage record {|
     # Role of the participant in the conversation (e.g., "user" or "assistant")
