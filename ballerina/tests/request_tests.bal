@@ -35,6 +35,55 @@ isolated function getCapturedRequest(string testId, string method) returns map<j
     return request.cloneWithType();
 }
 
+isolated function getCapturedApiVersion(string testId, string method) returns string|error {
+    json apiVersion;
+    lock {
+        apiVersion = capturedRequests[string `${testId}:${method}:anthropic-version`].clone();
+    }
+    return apiVersion.ensureType();
+}
+
+@test:Config
+function testDefaultApiVersion() returns error? {
+    string testId = "default-api-version";
+    ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    int _ = check provider->generate(`Pick a number`);
+    test:assertEquals(check getCapturedApiVersion(testId, "chat"), "2023-06-01");
+    test:assertEquals(check getCapturedApiVersion(testId, "generate"), "2023-06-01");
+}
+
+@test:Config
+function testApiVersion20261021IsSentAndTemperatureIsNotSent() returns error? {
+    string testId = "api-version-2026-10-21";
+    // Sonnet 4.6 supports temperature on 2023-06-01, but no model supports it on 2026-10-21.
+    ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`,
+        temperature = 0.3, apiVersion = API_VERSION_2026_10_21);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    int _ = check provider->generate(`Pick a number`);
+    test:assertEquals(check getCapturedApiVersion(testId, "chat"), "2026-10-21");
+    test:assertEquals(check getCapturedApiVersion(testId, "generate"), "2026-10-21");
+    test:assertFalse((check getCapturedRequest(testId, "chat")).hasKey("temperature"));
+    test:assertFalse((check getCapturedRequest(testId, "generate")).hasKey("temperature"));
+}
+
+@test:Config
+function testTemperatureWarningOnApiVersion20261021() {
+    // Every value is rejected on 2026-10-21, including the default, on every model.
+    ANTHROPIC_MODEL_NAMES[] models = [CLAUDE_SONNET_4_6, CLAUDE_SONNET_5_5, CLAUDE_OPUS_5_5];
+    decimal[] temperatures = [0.3, 1.0];
+    foreach ANTHROPIC_MODEL_NAMES model in models {
+        foreach decimal temperature in temperatures {
+            string? warning = temperatureWarning(model, temperature, API_VERSION_2026_10_21);
+            if warning !is string {
+                test:assertFail(string `expected a temperature warning for ${model} with ${temperature}`);
+            }
+            test:assertTrue(warning.includes("2026-10-21"), "the warning must name the API version");
+        }
+    }
+    test:assertEquals(temperatureWarning(CLAUDE_SONNET_4_6, (), API_VERSION_2026_10_21), ());
+}
+
 function temperatureTestModels() returns ANTHROPIC_MODEL_NAMES[][] => [[CLAUDE_SONNET_4_6], [CLAUDE_OPUS_4_7]];
 
 @test:Config {
@@ -49,8 +98,18 @@ function testTemperatureIsOmittedWhenNotSet(ANTHROPIC_MODEL_NAMES model) returns
     test:assertFalse((check getCapturedRequest(testId, "generate")).hasKey("temperature"));
 }
 
+function temperatureSupportedModels() returns ANTHROPIC_MODEL_NAMES[][] =>
+    [[CLAUDE_HAIKU_4_5], [CLAUDE_OPUS_4_5], [CLAUDE_OPUS_4_6], [CLAUDE_SONNET_4_6]];
+
+function temperatureUnsupportedModels() returns ANTHROPIC_MODEL_NAMES[][] =>
+    [[CLAUDE_OPUS_4_7], [CLAUDE_OPUS_4_8], [CLAUDE_OPUS_5], [CLAUDE_OPUS_5_5], [CLAUDE_FABLE_5], [CLAUDE_FABLE_5_1],
+        ...defaultTemperatureOnlyModels()];
+
+function defaultTemperatureOnlyModels() returns ANTHROPIC_MODEL_NAMES[][] =>
+    [[CLAUDE_SONNET_5], [CLAUDE_SONNET_5_5], [CLAUDE_HAIKU_5_5]];
+
 @test:Config {
-    dataProvider: temperatureTestModels
+    dataProvider: temperatureSupportedModels
 }
 function testTemperatureIsSentWhenSet(ANTHROPIC_MODEL_NAMES model) returns error? {
     string testId = string `send-temperature-${model}`;
@@ -60,6 +119,78 @@ function testTemperatureIsSentWhenSet(ANTHROPIC_MODEL_NAMES model) returns error
     int _ = check provider->generate(`Pick a number`);
     test:assertEquals((check getCapturedRequest(testId, "chat"))["temperature"], 0.3d);
     test:assertEquals((check getCapturedRequest(testId, "generate"))["temperature"], 0.3d);
+}
+
+@test:Config {
+    dataProvider: temperatureUnsupportedModels
+}
+function testTemperatureIsNotSentForUnsupportedModels(ANTHROPIC_MODEL_NAMES model) returns error? {
+    string testId = string `skip-temperature-${model}`;
+    ModelProvider provider = check new (API_KEY, model, string `${CAPTURE_SERVICE_URL}/${testId}`,
+        temperature = 0.3);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    int _ = check provider->generate(`Pick a number`);
+    test:assertFalse((check getCapturedRequest(testId, "chat")).hasKey("temperature"));
+    test:assertFalse((check getCapturedRequest(testId, "generate")).hasKey("temperature"));
+}
+
+@test:Config {
+    dataProvider: temperatureUnsupportedModels
+}
+function testTemperatureWarningOnUnsupportedModels(ANTHROPIC_MODEL_NAMES model) {
+    string? warning = temperatureWarning(model, 0.3);
+    if warning !is string {
+        test:assertFail(string `expected a temperature warning for ${model}`);
+    }
+    test:assertTrue(warning.includes(model), "the warning must name the model");
+    test:assertTrue(warning.includes("0.3"), "the warning must include the temperature value");
+}
+
+@test:Config {
+    dataProvider: defaultTemperatureOnlyModels
+}
+function testDefaultTemperatureIsSentForDefaultTemperatureOnlyModels(ANTHROPIC_MODEL_NAMES model) returns error? {
+    string testId = string `default-temperature-${model}`;
+    ModelProvider provider = check new (API_KEY, model, string `${CAPTURE_SERVICE_URL}/${testId}`,
+        temperature = 1.0);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    int _ = check provider->generate(`Pick a number`);
+    test:assertEquals((check getCapturedRequest(testId, "chat"))["temperature"], 1.0d);
+    test:assertEquals((check getCapturedRequest(testId, "generate"))["temperature"], 1.0d);
+}
+
+@test:Config {
+    dataProvider: defaultTemperatureOnlyModels
+}
+function testNonDefaultTemperatureWarningOnDefaultTemperatureOnlyModels(ANTHROPIC_MODEL_NAMES model) {
+    string? warning = temperatureWarning(model, 0.3);
+    if warning !is string {
+        test:assertFail(string `expected a temperature warning for ${model}`);
+    }
+    test:assertTrue(warning.includes("only the default temperature of 1.0"),
+        "the warning must state that only the default is supported");
+}
+
+@test:Config
+function testDefaultTemperatureWarningOnTemperatureUnsupportedModels() {
+    // These models reject even the default value.
+    test:assertTrue(temperatureWarning(CLAUDE_OPUS_5_5, 1.0) is string);
+    test:assertTrue(temperatureWarning(CLAUDE_FABLE_5_1, 1.0) is string);
+}
+
+@test:Config
+function testNoTemperatureWarningWhenNotApplicable() {
+    // No warning when temperature is unset, on models that support it, or when the default is set
+    // on models that support only the default.
+    test:assertEquals(temperatureWarning(CLAUDE_OPUS_5_5, ()), ());
+    test:assertEquals(temperatureWarning(CLAUDE_SONNET_4_6, ()), ());
+    foreach ANTHROPIC_MODEL_NAMES[] models in temperatureSupportedModels() {
+        test:assertEquals(temperatureWarning(models[0], 0.3), (), string `unexpected warning for ${models[0]}`);
+    }
+    foreach ANTHROPIC_MODEL_NAMES[] models in defaultTemperatureOnlyModels() {
+        test:assertEquals(temperatureWarning(models[0], 1.0), (), string `unexpected warning for ${models[0]}`);
+        test:assertEquals(temperatureWarning(models[0], 1), (), string `unexpected warning for ${models[0]}`);
+    }
 }
 
 function autoToolChoiceModels() returns ANTHROPIC_MODEL_NAMES[][] =>

@@ -304,7 +304,8 @@ isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|ai
 }
 
 isolated function generateLlmResponse(http:Client anthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType,
-        int maxTokens, decimal? temperature, ai:Prompt prompt, typedesc<json> expectedResponseTypedesc)
+        int maxTokens, decimal? temperature, ANTHROPIC_API_VERSIONS apiVersion, ai:Prompt prompt,
+        typedesc<json> expectedResponseTypedesc)
             returns anydata|ai:Error {
     observe:GenerateContentSpan span = observe:createGenerateContentSpan(modelType);
     span.addProvider("anthropic");
@@ -341,7 +342,7 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
 
     map<string> headers = {
         "x-api-key": apiKey,
-        "anthropic-version": ANTHROPIC_API_VERSION,
+        "anthropic-version": apiVersion,
         "content-type": "application/json",
         "anthropic-beta": "files-api-2025-04-14"
     };
