@@ -276,6 +276,9 @@ dependencies = [
 	{org = "ballerina", name = "lang.value"},
 	{org = "ballerina", name = "observe"}
 ]
+modules = [
+	{org = "ballerina", packageName = "log", moduleName = "log"}
+]
 
 [[package]]
 org = "ballerina"
@@ -408,13 +411,14 @@ dependencies = [
 [[package]]
 org = "ballerinax"
 name = "ai.anthropic"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
 	{org = "ballerina", name = "ai"},
 	{org = "ballerina", name = "constraint"},
 	{org = "ballerina", name = "http"},
 	{org = "ballerina", name = "jballerina.java"},
 	{org = "ballerina", name = "lang.array"},
+	{org = "ballerina", name = "log"},
 	{org = "ballerina", name = "test"}
 ]
 modules = [
