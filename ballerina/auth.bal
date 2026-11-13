@@ -180,8 +180,9 @@ isolated class WorkloadIdentityAuthProvider {
             TokenExchangeResponse|ai:Error response =
                 exchangeIdentityToken(self.tokenClient, self.exchangeParams, self.identityToken);
             if response is ai:Error {
-                // Keep using the cached access token while it is still valid.
-                if cachedToken is string && now < self.expiresAt - TOKEN_EXPIRY_BUFFER_SECONDS {
+                // Keep using the cached access token while it is still valid. The exchange may have taken a
+                // while to fail, so check against the current time.
+                if cachedToken is string && time:monotonicNow() < self.expiresAt - TOKEN_EXPIRY_BUFFER_SECONDS {
                     return cachedToken;
                 }
                 return response;
@@ -196,7 +197,8 @@ isolated class WorkloadIdentityAuthProvider {
 # Creates the authentication provider for the given authentication configuration.
 #
 # + auth - The authentication configuration
-# + clientConfig - The HTTP client configuration, used for the token exchange endpoint
+# + clientConfig - The HTTP client configuration, used for the token exchange endpoint without its retry
+# configuration
 # + return - The authentication provider, or an `ai:Error` if it could not be created
 isolated function createAuthProvider(AuthConfig auth, http:ClientConfiguration clientConfig)
         returns AuthProvider|ai:Error {
@@ -212,7 +214,10 @@ isolated function createAuthProvider(AuthConfig auth, http:ClientConfiguration c
         return new StaticAuthProvider({[AUTHORIZATION_HEADER]: string `Bearer ${auth.token}`});
     }
 
-    http:Client|error tokenClient = new (auth.tokenUrl, clientConfig);
+    // The token exchange is not retried. A retry sends the same identity token again, and Anthropic rejects an
+    // identity token with a `jti` claim that has already been exchanged.
+    var {retryConfig: _, ...tokenClientConfig} = clientConfig;
+    http:Client|error tokenClient = new (auth.tokenUrl, {...tokenClientConfig});
     if tokenClient is error {
         return error ai:Error("Failed to initialize the Workload Identity Federation token client", tokenClient);
     }

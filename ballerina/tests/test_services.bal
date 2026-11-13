@@ -15,6 +15,7 @@
 // under the License.
 
 import ballerina/http;
+import ballerina/lang.runtime;
 import ballerina/test;
 
 isolated map<json> chatRequestMessages = {};
@@ -25,8 +26,9 @@ isolated map<map<json>[]> tokenExchangeRequests = {};
 service /llm on new http:Listener(8080) {
     // Mock Workload Identity Federation token endpoint. Each successful exchange returns `access-<n>`, where `n` is
     // the number of exchanges for the test ID. With `failAfter` > 0, exchanges after the first `failAfter` fail.
+    // With `failDelay`, a failing exchange responds after that many seconds.
     resource function post anthropic/oauth/[string testId]/[int expiresIn]/[int failAfter]/token(
-            map<json> payload) returns json|http:Unauthorized {
+            map<json> payload, decimal? failDelay) returns json|http:Unauthorized {
         int count;
         lock {
             map<json>[] requests = tokenExchangeRequests[testId] ?: [];
@@ -35,6 +37,9 @@ service /llm on new http:Listener(8080) {
             count = requests.length();
         }
         if failAfter == -1 || (failAfter > 0 && count > failAfter) {
+            if failDelay is decimal {
+                runtime:sleep(failDelay);
+            }
             return <http:Unauthorized>{
                 body: {'type: "error", 'error: {'type: "authentication_error", message: "Authentication failed"}}
             };

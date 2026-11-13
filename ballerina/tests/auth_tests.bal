@@ -39,9 +39,11 @@ isolated function getTokenExchangeRequests(string testId) returns map<json>[] {
 }
 
 // Returns the token URL of the mock token endpoint. With `failAfter` > 0, exchanges after the first `failAfter`
-// fail; with -1, every exchange fails.
-function tokenUrl(string testId, int expiresIn = 3600, int failAfter = 0) returns string =>
-    string `${TOKEN_SERVICE_URL}/${testId}/${expiresIn}/${failAfter}/token`;
+// fail; with -1, every exchange fails. With `failDelay`, a failing exchange responds after that many seconds.
+function tokenUrl(string testId, int expiresIn = 3600, int failAfter = 0, decimal? failDelay = ()) returns string {
+    string url = string `${TOKEN_SERVICE_URL}/${testId}/${expiresIn}/${failAfter}/token`;
+    return failDelay is () ? url : string `${url}?failDelay=${failDelay}`;
+}
 
 function callChatAndGenerate(ModelProvider provider) returns error? {
     _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
@@ -211,6 +213,46 @@ function testWorkloadIdentityAuthUsesCachedAccessTokenWhenRefreshFails() returns
     check callChatAndGenerate(provider);
     test:assertEquals(getTokenExchangeRequests(testId).length(), 2);
     test:assertEquals(check getCapturedHeader(testId, "generate", "authorization"), "Bearer access-1");
+}
+
+@test:Config
+function testWorkloadIdentityAuthRechecksExpiryAfterRefreshFails() returns error? {
+    string testId = "auth-wif-refresh-fails-slowly";
+    // The access token expires in 32 seconds, so it may be used for 2 more seconds. The refresh fails after
+    // 3 seconds, by which time the access token is inside the expiry buffer and must not be used.
+    ModelProvider provider = check new ({
+        federationRuleId: FEDERATION_RULE_ID,
+        organizationId: ORGANIZATION_ID,
+        serviceAccountId: SERVICE_ACCOUNT_ID,
+        identityToken: "jwt-static",
+        tokenUrl: tokenUrl(testId, expiresIn = 32, failAfter = 1, failDelay = 3)
+    }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    ai:ChatAssistantMessage|ai:Error result = provider->chat([{role: ai:USER, content: "Hi"}]);
+    if result !is ai:LlmError {
+        test:assertFail("Expected an ai:LlmError once the access token is inside the expiry buffer");
+    }
+    test:assertEquals(getTokenExchangeRequests(testId).length(), 2);
+}
+
+@test:Config
+function testWorkloadIdentityAuthDoesNotRetryTokenExchange() returns error? {
+    string testId = "auth-wif-no-retry";
+    // Retrying the exchange would send the same identity token again, which Anthropic rejects when the identity
+    // token has a `jti` claim. The retry configuration applies only to requests to the Anthropic API.
+    ModelProvider provider = check new ({
+        federationRuleId: FEDERATION_RULE_ID,
+        organizationId: ORGANIZATION_ID,
+        serviceAccountId: SERVICE_ACCOUNT_ID,
+        identityToken: "jwt-static",
+        tokenUrl: tokenUrl(testId, failAfter = -1)
+    }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`,
+        retryConfig = {count: 3, interval: 0.1, statusCodes: [401]});
+    ai:ChatAssistantMessage|ai:Error result = provider->chat([{role: ai:USER, content: "Hi"}]);
+    if result !is ai:LlmError {
+        test:assertFail("Expected an ai:LlmError");
+    }
+    test:assertEquals(getTokenExchangeRequests(testId).length(), 1);
 }
 
 @test:Config
