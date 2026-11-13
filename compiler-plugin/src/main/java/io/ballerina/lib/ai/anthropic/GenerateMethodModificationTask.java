@@ -82,7 +82,7 @@ class GenerateMethodModificationTask implements ModifierTask<SourceModifierConte
     private static final String BALLERINA_ORG_NAME = "ballerina";
     private static final String ANTHROPIC_MODEL_PROVIDER_NAME = "ModelProvider";
     private static final String ANTHROPIC_MODEL_PROVIDER_MODULE_NAME = "ai.anthropic";
-    private static final String ANTHROPIC_MODEL_PROVIDER_MODULE_VERSION = "1";
+    private static final String ANTHROPIC_MODEL_PROVIDER_MODULE_VERSION = "2";
     private static final String ANTHROPIC_MODEL_PROVIDER_MODULE_ORG = "ballerinax";
     private final AiAnthropicCodeModifier.AnalysisData analysisData;
     private final ModifierData modifierData;

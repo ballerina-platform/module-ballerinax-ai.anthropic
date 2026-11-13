@@ -19,8 +19,30 @@ import ballerina/test;
 
 isolated map<json> chatRequestMessages = {};
 isolated map<json> capturedRequests = {};
+// The token exchange requests received by the mock token endpoint, in order, per test ID.
+isolated map<map<json>[]> tokenExchangeRequests = {};
 
 service /llm on new http:Listener(8080) {
+    // Mock Workload Identity Federation token endpoint. Each successful exchange returns `access-<n>`, where `n` is
+    // the number of exchanges for the test ID. With `failAfter` > 0, exchanges after the first `failAfter` fail.
+    resource function post anthropic/oauth/[string testId]/[int expiresIn]/[int failAfter]/token(
+            map<json> payload) returns json|http:Unauthorized {
+        int count;
+        lock {
+            map<json>[] requests = tokenExchangeRequests[testId] ?: [];
+            requests.push(payload.clone());
+            tokenExchangeRequests[testId] = requests;
+            count = requests.length();
+        }
+        if failAfter == -1 || (failAfter > 0 && count > failAfter) {
+            return <http:Unauthorized>{
+                body: {'type: "error", 'error: {'type: "authentication_error", message: "Authentication failed"}}
+            };
+        }
+        return {access_token: string `access-${count}`, token_type: "Bearer", expires_in: expiresIn,
+            scope: "workspace:inference"};
+    }
+
     resource function post anthropic/messages(map<json> payload)returns AnthropicApiResponse|error {
         test:assertEquals(payload["model"], CLAUDE_SONNET_4_6);
         test:assertEquals(payload["max_tokens"], 4096);
@@ -74,13 +96,19 @@ service /llm on new http:Listener(8080) {
     }
 
     resource function post anthropic/capture/[string testId]/messages(map<json> payload,
-            @http:Header {name: "anthropic-version"} string apiVersion) returns AnthropicApiResponse|error {
+            @http:Header {name: "anthropic-version"} string apiVersion,
+            @http:Header {name: "x-api-key"} string? apiKey,
+            @http:Header {name: "authorization"} string? authorization,
+            @http:Header {name: "anthropic-workspace-id"} string? workspaceId) returns AnthropicApiResponse|error {
         string model = check payload["model"].ensureType();
         boolean isGenerateRequest = payload.hasKey("tool_choice");
         string method = isGenerateRequest ? "generate" : "chat";
         lock {
             capturedRequests[string `${testId}:${method}`] = payload.cloneReadOnly();
             capturedRequests[string `${testId}:${method}:anthropic-version`] = apiVersion;
+            capturedRequests[string `${testId}:${method}:x-api-key`] = apiKey;
+            capturedRequests[string `${testId}:${method}:authorization`] = authorization;
+            capturedRequests[string `${testId}:${method}:anthropic-workspace-id`] = workspaceId;
         }
         return {
             id: "test-id",
