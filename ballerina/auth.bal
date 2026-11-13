@@ -21,7 +21,6 @@ import ballerina/time;
 
 const DEFAULT_TOKEN_URL = "https://api.anthropic.com/v1/oauth/token";
 const JWT_BEARER_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:jwt-bearer";
-const API_KEY_HEADER = "x-api-key";
 const AUTHORIZATION_HEADER = "authorization";
 const WORKSPACE_ID_HEADER = "anthropic-workspace-id";
 
@@ -33,7 +32,7 @@ const decimal TOKEN_EXPIRY_BUFFER_SECONDS = 30;
 # Authentication with an Anthropic API key.
 # See https://platform.claude.com/docs/en/manage-claude/authentication
 public type ApiKeyConfig record {|
-    # The Anthropic API key, sent in the `x-api-key` header
+    # The Anthropic API key, sent in the `Authorization: Bearer` header
     @display {label: "API Key"}
     string apiKey;
     # The workspace to run requests in (`wrkspc_...`), sent in the `anthropic-workspace-id` header.
@@ -202,7 +201,7 @@ isolated class WorkloadIdentityAuthProvider {
 isolated function createAuthProvider(AuthConfig auth, http:ClientConfiguration clientConfig)
         returns AuthProvider|ai:Error {
     if auth is ApiKeyConfig {
-        map<string> headers = {[API_KEY_HEADER]: auth.apiKey};
+        map<string> headers = {[AUTHORIZATION_HEADER]: string `Bearer ${auth.apiKey}`};
         string? workspaceId = auth.workspaceId;
         if workspaceId is string {
             headers[WORKSPACE_ID_HEADER] = workspaceId;

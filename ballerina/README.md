@@ -43,7 +43,7 @@ final ai:ModelProvider anthropicModel = check new anthropic:ModelProvider({apiKe
 
 The first argument sets how the connector authenticates with the Anthropic API:
 
-- **API key** (`anthropic:ApiKeyConfig`): set `workspaceId` when the key is a personal or service account key that is not scoped to a workspace.
+- **API key** (`anthropic:ApiKeyConfig`): sent in the `Authorization: Bearer` header. Set `workspaceId` when the key is a personal or service account key that is not scoped to a workspace.
 
     ```ballerina
     final ai:ModelProvider anthropicModel = check new anthropic:ModelProvider(

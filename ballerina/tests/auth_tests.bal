@@ -54,8 +54,8 @@ function testApiKeyAuth() returns error? {
     ModelProvider provider = check new ({apiKey: API_KEY}, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
     check callChatAndGenerate(provider);
     foreach string method in ["chat", "generate"] {
-        test:assertEquals(check getCapturedHeader(testId, method, "x-api-key"), API_KEY);
-        test:assertEquals(check getCapturedHeader(testId, method, "authorization"), ());
+        test:assertEquals(check getCapturedHeader(testId, method, "authorization"), string `Bearer ${API_KEY}`);
+        test:assertEquals(check getCapturedHeader(testId, method, "x-api-key"), ());
         test:assertEquals(check getCapturedHeader(testId, method, "anthropic-workspace-id"), ());
     }
 }
@@ -67,7 +67,7 @@ function testApiKeyAuthWithWorkspaceId() returns error? {
         string `${CAPTURE_SERVICE_URL}/${testId}`);
     check callChatAndGenerate(provider);
     foreach string method in ["chat", "generate"] {
-        test:assertEquals(check getCapturedHeader(testId, method, "x-api-key"), API_KEY);
+        test:assertEquals(check getCapturedHeader(testId, method, "authorization"), string `Bearer ${API_KEY}`);
         test:assertEquals(check getCapturedHeader(testId, method, "anthropic-workspace-id"), WORKSPACE_ID);
     }
 }
