@@ -51,6 +51,29 @@ function callChatAndGenerate(ModelProvider provider) returns error? {
 }
 
 @test:Config
+function testStringApiKeyAuth() returns error? {
+    string testId = "auth-string-api-key";
+    ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    check callChatAndGenerate(provider);
+    foreach string method in ["chat", "generate"] {
+        test:assertEquals(check getCapturedHeader(testId, method, "authorization"), string `Bearer ${API_KEY}`);
+        test:assertEquals(check getCapturedHeader(testId, method, "x-api-key"), ());
+        test:assertEquals(check getCapturedHeader(testId, method, "anthropic-workspace-id"), ());
+    }
+}
+
+@test:Config
+function testStringApiKeyAuthAsNamedArgument() returns error? {
+    string testId = "auth-string-api-key-named";
+    ModelProvider provider = check new (apiKey = API_KEY, modelType = CLAUDE_SONNET_4_6,
+        serviceUrl = string `${CAPTURE_SERVICE_URL}/${testId}`);
+    check callChatAndGenerate(provider);
+    foreach string method in ["chat", "generate"] {
+        test:assertEquals(check getCapturedHeader(testId, method, "authorization"), string `Bearer ${API_KEY}`);
+    }
+}
+
+@test:Config
 function testApiKeyAuth() returns error? {
     string testId = "auth-api-key";
     ModelProvider provider = check new ({apiKey: API_KEY}, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);

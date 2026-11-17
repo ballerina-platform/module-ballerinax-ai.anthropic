@@ -85,13 +85,6 @@ public type IdentityTokenFile record {|
 # fetched over HTTP, such as from the Google Cloud metadata server, Azure IMDS, or GitHub Actions.
 public type IdentityTokenProvider isolated function () returns string|error;
 
-# Authentication configurations for the Anthropic model provider.
-# - `ApiKeyConfig`: An Anthropic API key
-# - `WorkloadIdentityConfig`: Workload Identity Federation, with short-lived access tokens refreshed automatically
-# - `http:BearerTokenConfig`: An access token obtained elsewhere, sent in the `Authorization: Bearer` header.
-# The connector does not refresh it, so requests fail once it expires
-public type AuthConfig ApiKeyConfig|WorkloadIdentityConfig|http:BearerTokenConfig;
-
 # Provides the authentication headers for each request to the Anthropic API.
 type AuthProvider isolated object {
     # Returns the authentication headers to send with a request.
@@ -196,12 +189,15 @@ isolated class WorkloadIdentityAuthProvider {
 
 # Creates the authentication provider for the given authentication configuration.
 #
-# + auth - The authentication configuration
+# + auth - The authentication configuration. A `string` is an Anthropic API key
 # + clientConfig - The HTTP client configuration, used for the token exchange endpoint without its retry
 # configuration
 # + return - The authentication provider, or an `ai:Error` if it could not be created
-isolated function createAuthProvider(AuthConfig auth, http:ClientConfiguration clientConfig)
-        returns AuthProvider|ai:Error {
+isolated function createAuthProvider(string|ApiKeyConfig|WorkloadIdentityConfig|http:BearerTokenConfig auth,
+        http:ClientConfiguration clientConfig) returns AuthProvider|ai:Error {
+    if auth is string {
+        return new StaticAuthProvider({[AUTHORIZATION_HEADER]: string `Bearer ${auth}`});
+    }
     if auth is ApiKeyConfig {
         map<string> headers = {[AUTHORIZATION_HEADER]: string `Bearer ${auth.apiKey}`};
         string? workspaceId = auth.workspaceId;

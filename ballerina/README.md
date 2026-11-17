@@ -38,12 +38,14 @@ Here's how to initialize the Model Provider:
 import ballerina/ai;
 import ballerinax/ai.anthropic;
 
-final ai:ModelProvider anthropicModel = check new anthropic:ModelProvider({apiKey: "anthropicAiApiKey"}, anthropic:CLAUDE_SONNET_4_6);
+final ai:ModelProvider anthropicModel = check new anthropic:ModelProvider("anthropicAiApiKey", anthropic:CLAUDE_SONNET_4_6);
 ```
 
 The first argument sets how the connector authenticates with the Anthropic API:
 
-- **API key** (`anthropic:ApiKeyConfig`): sent in the `Authorization: Bearer` header. Set `workspaceId` when the key is a personal or service account key that is not scoped to a workspace.
+- **API key** (`string`): sent in the `Authorization: Bearer` header, as in the example above.
+
+- **API key with a workspace** (`anthropic:ApiKeyConfig`): sent in the `Authorization: Bearer` header. Set `workspaceId` when the key is a personal or service account key that is not scoped to a workspace.
 
     ```ballerina
     final ai:ModelProvider anthropicModel = check new anthropic:ModelProvider(
