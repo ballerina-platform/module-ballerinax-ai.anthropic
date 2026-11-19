@@ -15,7 +15,7 @@
 // under the License.
 
 import ballerina/ai;
-import ballerina/io;
+import ballerina/lang.runtime;
 import ballerina/test;
 
 const TOKEN_SERVICE_URL = "http://localhost:8080/llm/anthropic/oauth";
@@ -55,9 +55,10 @@ function testStringApiKeyAuth() returns error? {
     string testId = "auth-string-api-key";
     ModelProvider provider = check new (API_KEY, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
     check callChatAndGenerate(provider);
+    // A string key is sent in `x-api-key`, as in 1.x.
     foreach string method in ["chat", "generate"] {
-        test:assertEquals(check getCapturedHeader(testId, method, "authorization"), string `Bearer ${API_KEY}`);
-        test:assertEquals(check getCapturedHeader(testId, method, "x-api-key"), ());
+        test:assertEquals(check getCapturedHeader(testId, method, "x-api-key"), API_KEY);
+        test:assertEquals(check getCapturedHeader(testId, method, "authorization"), ());
         test:assertEquals(check getCapturedHeader(testId, method, "anthropic-workspace-id"), ());
     }
 }
@@ -69,7 +70,35 @@ function testStringApiKeyAuthAsNamedArgument() returns error? {
         serviceUrl = string `${CAPTURE_SERVICE_URL}/${testId}`);
     check callChatAndGenerate(provider);
     foreach string method in ["chat", "generate"] {
-        test:assertEquals(check getCapturedHeader(testId, method, "authorization"), string `Bearer ${API_KEY}`);
+        test:assertEquals(check getCapturedHeader(testId, method, "x-api-key"), API_KEY);
+        test:assertEquals(check getCapturedHeader(testId, method, "authorization"), ());
+        test:assertEquals(check getCapturedHeader(testId, method, "anthropic-workspace-id"), ());
+    }
+}
+
+@test:Config
+function testApiKeyIsTrimmed() returns error? {
+    string testId = "auth-api-key-trimmed";
+    // A key read from a file or an environment variable may end with a newline.
+    ModelProvider stringProvider = check new (string ` ${API_KEY}${"\n"}`, CLAUDE_SONNET_4_6,
+        string `${CAPTURE_SERVICE_URL}/${testId}`);
+    _ = check stringProvider->chat([{role: ai:USER, content: "Hi"}]);
+    test:assertEquals(check getCapturedHeader(testId, "chat", "x-api-key"), API_KEY);
+
+    ModelProvider configProvider = check new ({apiKey: string `${API_KEY}${"\n"}`}, CLAUDE_SONNET_4_6,
+        string `${CAPTURE_SERVICE_URL}/${testId}`);
+    _ = check configProvider->chat([{role: ai:USER, content: "Hi"}]);
+    test:assertEquals(check getCapturedHeader(testId, "chat", "authorization"), string `Bearer ${API_KEY}`);
+}
+
+@test:Config
+function testEmptyApiKeyFails() {
+    foreach string|ApiKeyConfig apiKey in ["", " \n", {apiKey: ""}] {
+        ModelProvider|ai:Error provider = new (apiKey, CLAUDE_SONNET_4_6);
+        if provider !is ai:Error {
+            test:assertFail("Expected an ai:Error for an empty API key");
+        }
+        test:assertEquals(provider.message(), "The Anthropic API key is empty");
     }
 }
 
@@ -156,84 +185,99 @@ function testWorkloadIdentityAuthWithoutWorkspaceId() returns error? {
 }
 
 @test:Config
-function testWorkloadIdentityAuthRefreshesAccessTokenBeforeExpiry() returns error? {
-    string testId = "auth-wif-refresh";
-    // An access token that expires within the refresh buffer is exchanged again on the next request.
+function testWorkloadIdentityAuthWithoutServiceAccountId() returns error? {
+    string testId = "auth-wif-no-service-account";
     ModelProvider provider = check new ({
         federationRuleId: FEDERATION_RULE_ID,
         organizationId: ORGANIZATION_ID,
-        serviceAccountId: SERVICE_ACCOUNT_ID,
+        identityToken: "jwt-static",
+        tokenUrl: tokenUrl(testId)
+    }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    test:assertFalse(getTokenExchangeRequests(testId)[0].hasKey("service_account_id"));
+}
+
+@test:Config
+function testWorkloadIdentityAuthDefaultsTokenUrlToServiceUrl() returns error? {
+    string testId = "auth-wif-default-token-url";
+    // Without `tokenUrl`, the exchange goes to `/oauth/token` under the service URL, not to api.anthropic.com.
+    ModelProvider provider = check new ({
+        federationRuleId: FEDERATION_RULE_ID,
+        organizationId: ORGANIZATION_ID,
+        identityToken: "jwt-static"
+    }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    test:assertEquals(getTokenExchangeRequests(testId).length(), 1);
+    test:assertEquals(check getCapturedHeader(testId, "chat", "authorization"), "Bearer access-1");
+}
+
+@test:Config
+function testWorkloadIdentityAuthConcurrentRequestsExchangeOnce() returns error? {
+    string testId = "auth-wif-concurrent";
+    ModelProvider provider = check new ({
+        federationRuleId: FEDERATION_RULE_ID,
+        organizationId: ORGANIZATION_ID,
+        identityToken: "jwt-static",
+        tokenUrl: tokenUrl(testId)
+    }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    future<ai:ChatAssistantMessage|ai:Error>[] calls = [];
+    foreach int i in 0 ..< 10 {
+        future<ai:ChatAssistantMessage|ai:Error> call = start provider->chat([{role: ai:USER, content: "Hi"}]);
+        calls.push(call);
+    }
+    foreach future<ai:ChatAssistantMessage|ai:Error> call in calls {
+        _ = check wait call;
+    }
+    test:assertEquals(getTokenExchangeRequests(testId).length(), 1);
+}
+
+@test:Config
+function testWorkloadIdentityAuthReusesShortLivedAccessToken() returns error? {
+    string testId = "auth-wif-short-lived";
+    // A 100-second access token is inside the 120-second refresh buffer from the start. It is refreshed halfway
+    // through its lifetime instead, so back-to-back requests share one exchange.
+    ModelProvider provider = check new ({
+        federationRuleId: FEDERATION_RULE_ID,
+        organizationId: ORGANIZATION_ID,
         identityToken: "jwt-static",
         tokenUrl: tokenUrl(testId, expiresIn = 100)
     }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
     check callChatAndGenerate(provider);
+    test:assertEquals(getTokenExchangeRequests(testId).length(), 1);
+}
+
+@test:Config
+function testWorkloadIdentityAuthRefreshesAccessTokenBeforeExpiry() returns error? {
+    string testId = "auth-wif-refresh";
+    // A 6-second access token is refreshed after 3 seconds, halfway through its lifetime.
+    ModelProvider provider = check new ({
+        federationRuleId: FEDERATION_RULE_ID,
+        organizationId: ORGANIZATION_ID,
+        identityToken: "jwt-static",
+        tokenUrl: tokenUrl(testId, expiresIn = 6)
+    }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    runtime:sleep(3.5);
+    int _ = check provider->generate(`Pick a number`);
     test:assertEquals(getTokenExchangeRequests(testId).length(), 2);
     test:assertEquals(check getCapturedHeader(testId, "chat", "authorization"), "Bearer access-1");
     test:assertEquals(check getCapturedHeader(testId, "generate", "authorization"), "Bearer access-2");
 }
 
 @test:Config
-function testWorkloadIdentityAuthReadsIdentityTokenFileForEveryExchange() returns error? {
-    string testId = "auth-wif-file";
-    string path = "target/wif-identity-token.txt";
-    check io:fileWriteString(path, "jwt-from-file-1\n");
-    ModelProvider provider = check new ({
-        federationRuleId: FEDERATION_RULE_ID,
-        organizationId: ORGANIZATION_ID,
-        serviceAccountId: SERVICE_ACCOUNT_ID,
-        identityToken: {path},
-        tokenUrl: tokenUrl(testId, expiresIn = 100)
-    }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
-    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
-    // The identity token rotates on disk.
-    check io:fileWriteString(path, "jwt-from-file-2\n");
-    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
-
-    map<json>[] exchanges = getTokenExchangeRequests(testId);
-    test:assertEquals(exchanges.length(), 2);
-    test:assertEquals(exchanges[0]["assertion"], "jwt-from-file-1");
-    test:assertEquals(exchanges[1]["assertion"], "jwt-from-file-2");
-}
-
-isolated int identityTokenProviderCalls = 0;
-
-@test:Config
-function testWorkloadIdentityAuthCallsIdentityTokenProviderForEveryExchange() returns error? {
-    string testId = "auth-wif-provider";
-    IdentityTokenProvider identityTokenProvider = isolated function() returns string|error {
-        lock {
-            identityTokenProviderCalls += 1;
-            return string `jwt-from-provider-${identityTokenProviderCalls}`;
-        }
-    };
-    ModelProvider provider = check new ({
-        federationRuleId: FEDERATION_RULE_ID,
-        organizationId: ORGANIZATION_ID,
-        serviceAccountId: SERVICE_ACCOUNT_ID,
-        identityToken: identityTokenProvider,
-        tokenUrl: tokenUrl(testId, expiresIn = 100)
-    }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
-    check callChatAndGenerate(provider);
-
-    map<json>[] exchanges = getTokenExchangeRequests(testId);
-    test:assertEquals(exchanges.length(), 2);
-    test:assertEquals(exchanges[0]["assertion"], "jwt-from-provider-1");
-    test:assertEquals(exchanges[1]["assertion"], "jwt-from-provider-2");
-}
-
-@test:Config
 function testWorkloadIdentityAuthUsesCachedAccessTokenWhenRefreshFails() returns error? {
     string testId = "auth-wif-refresh-fails";
-    // The first exchange succeeds and the rest fail. The access token is still valid for longer than the
-    // expiry buffer, so it is used after the refresh fails.
+    // A 6-second access token is refreshed after 3 seconds, and used until 4.5 seconds if the refresh fails.
+    // The first exchange succeeds and the rest fail, so the request at 3.5 seconds uses the cached token.
     ModelProvider provider = check new ({
         federationRuleId: FEDERATION_RULE_ID,
         organizationId: ORGANIZATION_ID,
-        serviceAccountId: SERVICE_ACCOUNT_ID,
         identityToken: "jwt-static",
-        tokenUrl: tokenUrl(testId, expiresIn = 100, failAfter = 1)
+        tokenUrl: tokenUrl(testId, expiresIn = 6, failAfter = 1)
     }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
-    check callChatAndGenerate(provider);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    runtime:sleep(3.5);
+    int _ = check provider->generate(`Pick a number`);
     test:assertEquals(getTokenExchangeRequests(testId).length(), 2);
     test:assertEquals(check getCapturedHeader(testId, "generate", "authorization"), "Bearer access-1");
 }
@@ -241,16 +285,16 @@ function testWorkloadIdentityAuthUsesCachedAccessTokenWhenRefreshFails() returns
 @test:Config
 function testWorkloadIdentityAuthRechecksExpiryAfterRefreshFails() returns error? {
     string testId = "auth-wif-refresh-fails-slowly";
-    // The access token expires in 32 seconds, so it may be used for 2 more seconds. The refresh fails after
-    // 3 seconds, by which time the access token is inside the expiry buffer and must not be used.
+    // A 6-second access token may be used until 4.5 seconds if a refresh fails. The refresh starts at 3.5 seconds
+    // and fails 2 seconds later, after that point, so the cached token must not be used.
     ModelProvider provider = check new ({
         federationRuleId: FEDERATION_RULE_ID,
         organizationId: ORGANIZATION_ID,
-        serviceAccountId: SERVICE_ACCOUNT_ID,
         identityToken: "jwt-static",
-        tokenUrl: tokenUrl(testId, expiresIn = 32, failAfter = 1, failDelay = 3)
+        tokenUrl: tokenUrl(testId, expiresIn = 6, failAfter = 1, failDelay = 2)
     }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
     _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    runtime:sleep(3.5);
     ai:ChatAssistantMessage|ai:Error result = provider->chat([{role: ai:USER, content: "Hi"}]);
     if result !is ai:LlmError {
         test:assertFail("Expected an ai:LlmError once the access token is inside the expiry buffer");
@@ -299,22 +343,4 @@ function testWorkloadIdentityAuthReturnsErrorWhenExchangeFails() returns error? 
     if generateResult !is ai:LlmError {
         test:assertFail("Expected an ai:LlmError from generate");
     }
-}
-
-@test:Config
-function testWorkloadIdentityAuthReturnsErrorWhenIdentityTokenFileIsMissing() returns error? {
-    string testId = "auth-wif-missing-file";
-    ModelProvider provider = check new ({
-        federationRuleId: FEDERATION_RULE_ID,
-        organizationId: ORGANIZATION_ID,
-        serviceAccountId: SERVICE_ACCOUNT_ID,
-        identityToken: {path: "target/does-not-exist.txt"},
-        tokenUrl: tokenUrl(testId)
-    }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
-    ai:ChatAssistantMessage|ai:Error result = provider->chat([{role: ai:USER, content: "Hi"}]);
-    if result !is ai:Error {
-        test:assertFail("Expected an ai:Error");
-    }
-    test:assertEquals(result.message(), "Failed to get the identity token for Workload Identity Federation");
-    test:assertEquals(getTokenExchangeRequests(testId).length(), 0);
 }

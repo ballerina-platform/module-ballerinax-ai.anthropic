@@ -16,17 +16,19 @@
 
 import ballerina/ai;
 import ballerina/http;
-import ballerina/io;
 import ballerina/time;
 
-const DEFAULT_TOKEN_URL = "https://api.anthropic.com/v1/oauth/token";
+const TOKEN_PATH = "/oauth/token";
 const JWT_BEARER_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 const AUTHORIZATION_HEADER = "authorization";
+const API_KEY_HEADER = "x-api-key";
 const WORKSPACE_ID_HEADER = "anthropic-workspace-id";
 
-// A cached access token is refreshed this many seconds before it expires.
+// A cached access token is refreshed this many seconds before it expires, or halfway through its lifetime if
+// that is sooner, so a short-lived access token is not exchanged again on every request.
 const decimal TOKEN_REFRESH_BUFFER_SECONDS = 120;
-// If a refresh fails, the cached access token is still used until this many seconds before it expires.
+// If a refresh fails, the cached access token is still used until this many seconds before it expires, or until
+// three quarters of its lifetime if that is sooner.
 const decimal TOKEN_EXPIRY_BUFFER_SECONDS = 30;
 
 # Authentication with an Anthropic API key.
@@ -43,7 +45,7 @@ public type ApiKeyConfig record {|
 
 # Authentication with Workload Identity Federation. The connector exchanges an identity token issued by your
 # identity provider (for example, AWS, Google Cloud, Microsoft Entra ID, Kubernetes, or GitHub Actions) for a
-# short-lived Anthropic access token, and refreshes the access token before it expires.
+# short-lived Anthropic access token, and reuses the access token until it is about to expire.
 # See https://platform.claude.com/docs/en/manage-claude/workload-identity-federation
 public type WorkloadIdentityConfig record {|
     # The ID of the federation rule to evaluate (`fdrl_...`)
@@ -52,38 +54,24 @@ public type WorkloadIdentityConfig record {|
     # The ID of the Anthropic organization (UUID)
     @display {label: "Organization ID"}
     string organizationId;
-    # The ID of the service account that the access token acts as (`svac_...`)
+    # The ID of the service account that the access token acts as (`svac_...`). Optional, as the federation rule
+    # determines the service account. If set, it must be the rule's service account
     @display {label: "Service Account ID"}
-    string serviceAccountId;
+    string serviceAccountId?;
     # The workspace to scope the access token to (`wrkspc_...`). Required when the federation rule is enabled
     # for more than one workspace
     @display {label: "Workspace ID"}
     string workspaceId?;
-    # Where to get the identity token (JWT) issued by your identity provider. The connector gets the identity
-    # token again for every exchange
+    # The identity token (JWT) issued by your identity provider. The same identity token is used for every
+    # exchange. Anthropic accepts an identity token with a `jti` claim only once, and none after it expires, so
+    # once the access token expires, create a new model provider with a new identity token
     @display {label: "Identity Token"}
-    IdentityTokenSource identityToken;
-    # The URL of the Anthropic token exchange endpoint
+    string identityToken;
+    # The URL of the Anthropic token exchange endpoint. Defaults to `/oauth/token` under the service URL of the
+    # model provider
     @display {label: "Token URL"}
-    string tokenUrl = DEFAULT_TOKEN_URL;
+    string tokenUrl?;
 |};
-
-# The source of the identity token (JWT) exchanged for an Anthropic access token.
-# A `string` is the identity token itself. An identity token with a `jti` claim can be exchanged only once, so a
-# fixed `string` stops working when the first access token expires. Prefer `IdentityTokenFile` or
-# `IdentityTokenProvider`, which provide a fresh identity token for every exchange.
-public type IdentityTokenSource IdentityTokenFile|IdentityTokenProvider|string;
-
-# A file containing the identity token. The file is read again for every exchange, so identity tokens that
-# rotate on disk (for example, Kubernetes projected service account tokens) are always current.
-public type IdentityTokenFile record {|
-    # The path to the file containing the identity token
-    string path;
-|};
-
-# A function that returns a fresh identity token. It is called for every exchange. Use it for identity tokens
-# fetched over HTTP, such as from the Google Cloud metadata server, Azure IMDS, or GitHub Actions.
-public type IdentityTokenProvider isolated function () returns string|error;
 
 # Provides the authentication headers for each request to the Anthropic API.
 type AuthProvider isolated object {
@@ -122,7 +110,7 @@ type TokenExchangeParams record {|
     # The ID of the Anthropic organization
     string organization_id;
     # The ID of the service account that the access token acts as
-    string service_account_id;
+    string service_account_id?;
     # The workspace to scope the access token to
     string workspace_id?;
 |};
@@ -141,13 +129,15 @@ isolated class WorkloadIdentityAuthProvider {
     *AuthProvider;
     private final http:Client tokenClient;
     private final TokenExchangeParams & readonly exchangeParams;
-    private final IdentityTokenSource & readonly identityToken;
+    private final string identityToken;
     private string? accessToken = ();
-    // The monotonic time, in seconds, at which the cached access token expires.
-    private decimal expiresAt = 0;
+    // The monotonic time, in seconds, after which the cached access token is refreshed.
+    private decimal refreshAt = 0;
+    // The monotonic time, in seconds, until which the cached access token is used if a refresh fails.
+    private decimal usableUntil = 0;
 
     isolated function init(http:Client tokenClient, TokenExchangeParams & readonly exchangeParams,
-            IdentityTokenSource & readonly identityToken) {
+            string identityToken) {
         self.tokenClient = tokenClient;
         self.exchangeParams = exchangeParams;
         self.identityToken = identityToken;
@@ -167,7 +157,7 @@ isolated class WorkloadIdentityAuthProvider {
         lock {
             decimal now = time:monotonicNow();
             string? cachedToken = self.accessToken;
-            if cachedToken is string && now < self.expiresAt - TOKEN_REFRESH_BUFFER_SECONDS {
+            if cachedToken is string && now < self.refreshAt {
                 return cachedToken;
             }
             TokenExchangeResponse|ai:Error response =
@@ -175,13 +165,15 @@ isolated class WorkloadIdentityAuthProvider {
             if response is ai:Error {
                 // Keep using the cached access token while it is still valid. The exchange may have taken a
                 // while to fail, so check against the current time.
-                if cachedToken is string && time:monotonicNow() < self.expiresAt - TOKEN_EXPIRY_BUFFER_SECONDS {
+                if cachedToken is string && time:monotonicNow() < self.usableUntil {
                     return cachedToken;
                 }
                 return response;
             }
+            decimal expiresIn = <decimal>response.expires_in;
             self.accessToken = response.access_token;
-            self.expiresAt = now + <decimal>response.expires_in;
+            self.refreshAt = now + expiresIn - decimal:min(TOKEN_REFRESH_BUFFER_SECONDS, expiresIn / 2);
+            self.usableUntil = now + expiresIn - decimal:min(TOKEN_EXPIRY_BUFFER_SECONDS, expiresIn / 4);
             return response.access_token;
         }
     }
@@ -190,16 +182,18 @@ isolated class WorkloadIdentityAuthProvider {
 # Creates the authentication provider for the given authentication configuration.
 #
 # + auth - The authentication configuration. A `string` is an Anthropic API key
+# + serviceUrl - The base URL of the Anthropic API. The default token exchange endpoint is `/oauth/token` under it
 # + clientConfig - The HTTP client configuration, used for the token exchange endpoint without its retry
 # configuration
 # + return - The authentication provider, or an `ai:Error` if it could not be created
 isolated function createAuthProvider(string|ApiKeyConfig|WorkloadIdentityConfig|http:BearerTokenConfig auth,
-        http:ClientConfiguration clientConfig) returns AuthProvider|ai:Error {
+        string serviceUrl, http:ClientConfiguration clientConfig) returns AuthProvider|ai:Error {
     if auth is string {
-        return new StaticAuthProvider({[AUTHORIZATION_HEADER]: string `Bearer ${auth}`});
+        // Sent in the `x-api-key` header, as in 1.x, so existing users see no change on the wire.
+        return new StaticAuthProvider({[API_KEY_HEADER]: check validateApiKey(auth)});
     }
     if auth is ApiKeyConfig {
-        map<string> headers = {[AUTHORIZATION_HEADER]: string `Bearer ${auth.apiKey}`};
+        map<string> headers = {[AUTHORIZATION_HEADER]: string `Bearer ${check validateApiKey(auth.apiKey)}`};
         string? workspaceId = auth.workspaceId;
         if workspaceId is string {
             headers[WORKSPACE_ID_HEADER] = workspaceId;
@@ -213,40 +207,37 @@ isolated function createAuthProvider(string|ApiKeyConfig|WorkloadIdentityConfig|
     // The token exchange is not retried. A retry sends the same identity token again, and Anthropic rejects an
     // identity token with a `jti` claim that has already been exchanged.
     var {retryConfig: _, ...tokenClientConfig} = clientConfig;
-    http:Client|error tokenClient = new (auth.tokenUrl, {...tokenClientConfig});
+    string tokenUrl = auth.tokenUrl ?: string `${trimTrailingSlashes(serviceUrl)}${TOKEN_PATH}`;
+    http:Client|error tokenClient = new (tokenUrl, {...tokenClientConfig});
     if tokenClient is error {
         return error ai:Error("Failed to initialize the Workload Identity Federation token client", tokenClient);
     }
     TokenExchangeParams exchangeParams = {
         federation_rule_id: auth.federationRuleId,
-        organization_id: auth.organizationId,
-        service_account_id: auth.serviceAccountId
+        organization_id: auth.organizationId
     };
+    string? serviceAccountId = auth.serviceAccountId;
+    if serviceAccountId is string {
+        exchangeParams.service_account_id = serviceAccountId;
+    }
     string? workspaceId = auth.workspaceId;
     if workspaceId is string {
         exchangeParams.workspace_id = workspaceId;
     }
-    IdentityTokenSource identityToken = auth.identityToken;
-    IdentityTokenSource & readonly readonlyIdentityToken = identityToken is IdentityTokenFile
-        ? identityToken.cloneReadOnly() : identityToken;
-    return new WorkloadIdentityAuthProvider(tokenClient, exchangeParams.cloneReadOnly(), readonlyIdentityToken);
+    return new WorkloadIdentityAuthProvider(tokenClient, exchangeParams.cloneReadOnly(), auth.identityToken);
 }
 
 # Exchanges the identity token for a short-lived Anthropic access token.
 #
 # + tokenClient - The HTTP client for the token exchange endpoint
 # + exchangeParams - The fields of the token exchange request that do not change between exchanges
-# + identityToken - The source of the identity token
+# + identityToken - The identity token
 # + return - The token exchange response, or an `ai:Error` if the exchange fails
 isolated function exchangeIdentityToken(http:Client tokenClient, TokenExchangeParams & readonly exchangeParams,
-        IdentityTokenSource & readonly identityToken) returns TokenExchangeResponse|ai:Error {
-    string|error assertion = getIdentityToken(identityToken);
-    if assertion is error {
-        return error ai:Error("Failed to get the identity token for Workload Identity Federation", assertion);
-    }
+        string identityToken) returns TokenExchangeResponse|ai:Error {
     map<json> request = {
         grant_type: JWT_BEARER_GRANT_TYPE,
-        assertion: assertion.trim(),
+        assertion: identityToken.trim(),
         ...exchangeParams
     };
     TokenExchangeResponse|error response = tokenClient->post("", request);
@@ -265,12 +256,22 @@ isolated function exchangeIdentityToken(http:Client tokenClient, TokenExchangePa
     return response;
 }
 
-isolated function getIdentityToken(IdentityTokenSource & readonly identityToken) returns string|error {
-    if identityToken is string {
-        return identityToken;
+# Trims an API key, so a key read from a file or an environment variable with a trailing newline still works.
+#
+# + apiKey - The API key
+# + return - The trimmed API key, or an `ai:Error` if it is empty
+isolated function validateApiKey(string apiKey) returns string|ai:Error {
+    string trimmed = apiKey.trim();
+    if trimmed == "" {
+        return error ai:Error("The Anthropic API key is empty");
     }
-    if identityToken is IdentityTokenFile {
-        return io:fileReadString(identityToken.path);
+    return trimmed;
+}
+
+isolated function trimTrailingSlashes(string url) returns string {
+    string result = url;
+    while result.endsWith("/") {
+        result = result.substring(0, result.length() - 1);
     }
-    return identityToken();
+    return result;
 }

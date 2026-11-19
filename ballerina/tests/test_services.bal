@@ -48,6 +48,18 @@ service /llm on new http:Listener(8080) {
             scope: "workspace:inference"};
     }
 
+    // Mock token endpoint at `/oauth/token` under the capture service URL, for the default token URL.
+    resource function post anthropic/capture/[string testId]/oauth/token(map<json> payload) returns json {
+        int count;
+        lock {
+            map<json>[] requests = tokenExchangeRequests[testId] ?: [];
+            requests.push(payload.clone());
+            tokenExchangeRequests[testId] = requests;
+            count = requests.length();
+        }
+        return {access_token: string `access-${count}`, token_type: "Bearer", expires_in: 3600};
+    }
+
     resource function post anthropic/messages(map<json> payload)returns AnthropicApiResponse|error {
         test:assertEquals(payload["model"], CLAUDE_SONNET_4_6);
         test:assertEquals(payload["max_tokens"], 4096);
