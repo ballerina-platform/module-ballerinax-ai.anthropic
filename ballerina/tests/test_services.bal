@@ -26,9 +26,11 @@ isolated map<map<json>[]> tokenExchangeRequests = {};
 service /llm on new http:Listener(8080) {
     // Mock Workload Identity Federation token endpoint. Each successful exchange returns `access-<n>`, where `n` is
     // the number of exchanges for the test ID. With `failAfter` > 0, exchanges after the first `failAfter` fail.
-    // With `failDelay`, a failing exchange responds after that many seconds.
+    // With `failDelay`, a failing exchange responds after that many seconds. A failing exchange returns a 401, or
+    // a 503 with `unavailable`.
     resource function post anthropic/oauth/[string testId]/[int expiresIn]/[int failAfter]/token(
-            map<json> payload, decimal? failDelay) returns json|http:Unauthorized {
+            map<json> payload, decimal? failDelay, boolean unavailable = false)
+            returns json|http:Unauthorized|http:ServiceUnavailable {
         int count;
         lock {
             map<json>[] requests = tokenExchangeRequests[testId] ?: [];
@@ -39,6 +41,11 @@ service /llm on new http:Listener(8080) {
         if failAfter == -1 || (failAfter > 0 && count > failAfter) {
             if failDelay is decimal {
                 runtime:sleep(failDelay);
+            }
+            if unavailable {
+                return <http:ServiceUnavailable>{
+                    body: {'type: "error", 'error: {'type: "overloaded_error", message: "Overloaded"}}
+                };
             }
             return <http:Unauthorized>{
                 body: {'type: "error", 'error: {'type: "authentication_error", message: "Authentication failed"}}

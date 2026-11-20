@@ -30,6 +30,9 @@ const decimal TOKEN_REFRESH_BUFFER_SECONDS = 120;
 // If a refresh fails, the cached access token is still used until this many seconds before it expires, or until
 // three quarters of its lifetime if that is sooner.
 const decimal TOKEN_EXPIRY_BUFFER_SECONDS = 30;
+// After a token exchange fails with an error that may be temporary, the token endpoint is not called again for
+// this many seconds, so concurrent requests and an outage do not call it at request rate.
+const decimal TOKEN_EXCHANGE_BACKOFF_SECONDS = 5;
 
 # Authentication with an Anthropic API key.
 # See https://platform.claude.com/docs/en/manage-claude/authentication
@@ -135,6 +138,13 @@ isolated class WorkloadIdentityAuthProvider {
     private decimal refreshAt = 0;
     // The monotonic time, in seconds, until which the cached access token is used if a refresh fails.
     private decimal usableUntil = 0;
+    // The last failed exchange, returned without calling the token endpoint until `retryAfter`.
+    private ai:Error? lastError = ();
+    // The monotonic time, in seconds, before which a failed exchange is not tried again.
+    private decimal retryAfter = 0;
+    // Set when the token endpoint rejects the identity token. The identity token does not change, so no later
+    // exchange can succeed, and the token endpoint is not called again.
+    private ai:Error? rejectedError = ();
 
     isolated function init(http:Client tokenClient, TokenExchangeParams & readonly exchangeParams,
             string identityToken) {
@@ -152,6 +162,11 @@ isolated class WorkloadIdentityAuthProvider {
     # is about to expire. The exchange runs inside the lock so that concurrent requests trigger only one exchange,
     # as an identity token with a `jti` claim can be exchanged only once.
     #
+    # A failed exchange is recorded, so requests queued behind it do not call the token endpoint again. They use
+    # the cached access token while it is still valid, or return the recorded error. After an error that may be
+    # temporary, the exchange is tried again after `TOKEN_EXCHANGE_BACKOFF_SECONDS`. After the token endpoint
+    # rejects the identity token, it is never tried again.
+    #
     # + return - The access token, or an `ai:Error` if the exchange fails
     isolated function getAccessToken() returns string|ai:Error {
         lock {
@@ -160,20 +175,33 @@ isolated class WorkloadIdentityAuthProvider {
             if cachedToken is string && now < self.refreshAt {
                 return cachedToken;
             }
+            ai:Error? recordedError = self.rejectedError ?: (now < self.retryAfter ? self.lastError : ());
+            if recordedError is ai:Error {
+                return cachedToken is string && now < self.usableUntil ? cachedToken : recordedError;
+            }
             TokenExchangeResponse|ai:Error response =
                 exchangeIdentityToken(self.tokenClient, self.exchangeParams, self.identityToken);
             if response is ai:Error {
-                // Keep using the cached access token while it is still valid. The exchange may have taken a
-                // while to fail, so check against the current time.
-                if cachedToken is string && time:monotonicNow() < self.usableUntil {
-                    return cachedToken;
+                // The exchange may have taken a while to fail, so use the current time from here on.
+                decimal failedAt = time:monotonicNow();
+                ai:Error exchangeError = response;
+                if isIdentityTokenRejected(response) {
+                    exchangeError = error ai:LlmError(string `${response.message()}. The identity token is not `
+                        + "exchanged again. Create a new model provider with a new identity token.", response);
+                    self.rejectedError = exchangeError;
+                } else {
+                    self.lastError = exchangeError;
+                    self.retryAfter = failedAt + TOKEN_EXCHANGE_BACKOFF_SECONDS;
                 }
-                return response;
+                // Keep using the cached access token while it is still valid.
+                return cachedToken is string && failedAt < self.usableUntil ? cachedToken : exchangeError;
             }
             decimal expiresIn = <decimal>response.expires_in;
             self.accessToken = response.access_token;
             self.refreshAt = now + expiresIn - decimal:min(TOKEN_REFRESH_BUFFER_SECONDS, expiresIn / 2);
             self.usableUntil = now + expiresIn - decimal:min(TOKEN_EXPIRY_BUFFER_SECONDS, expiresIn / 4);
+            self.lastError = ();
+            self.retryAfter = 0;
             return response.access_token;
         }
     }
@@ -254,6 +282,21 @@ isolated function exchangeIdentityToken(http:Client tokenClient, TokenExchangePa
         return error ai:LlmError("Unexpected response from the Anthropic token exchange endpoint", response);
     }
     return response;
+}
+
+# Returns whether the token endpoint rejected the identity token, for example because its `jti` was already used,
+# it has expired, or it does not match the federation rule. A 4xx response other than 408 and 429 means the same
+# identity token cannot succeed later.
+#
+# + err - The error returned by the token exchange
+# + return - `true` if the identity token was rejected
+isolated function isIdentityTokenRejected(ai:Error err) returns boolean {
+    error? cause = err.cause();
+    if cause !is http:ApplicationResponseError {
+        return false;
+    }
+    int statusCode = cause.detail().statusCode;
+    return statusCode >= 400 && statusCode < 500 && statusCode != 408 && statusCode != 429;
 }
 
 # Trims an API key, so a key read from a file or an environment variable with a trailing newline still works.

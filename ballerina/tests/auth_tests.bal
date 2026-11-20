@@ -40,9 +40,25 @@ isolated function getTokenExchangeRequests(string testId) returns map<json>[] {
 
 // Returns the token URL of the mock token endpoint. With `failAfter` > 0, exchanges after the first `failAfter`
 // fail; with -1, every exchange fails. With `failDelay`, a failing exchange responds after that many seconds.
-function tokenUrl(string testId, int expiresIn = 3600, int failAfter = 0, decimal? failDelay = ()) returns string {
-    string url = string `${TOKEN_SERVICE_URL}/${testId}/${expiresIn}/${failAfter}/token`;
-    return failDelay is () ? url : string `${url}?failDelay=${failDelay}`;
+// A failing exchange returns a 401, or a 503 with `unavailable`.
+function tokenUrl(string testId, int expiresIn = 3600, int failAfter = 0, decimal? failDelay = (),
+        boolean unavailable = false) returns string {
+    string url = string `${TOKEN_SERVICE_URL}/${testId}/${expiresIn}/${failAfter}/token?unavailable=${unavailable}`;
+    return failDelay is () ? url : string `${url}&failDelay=${failDelay}`;
+}
+
+function chatConcurrently(ModelProvider provider, int count) returns (ai:ChatAssistantMessage|ai:Error)[] {
+    future<ai:ChatAssistantMessage|ai:Error>[] calls = [];
+    foreach int i in 0 ..< count {
+        future<ai:ChatAssistantMessage|ai:Error> call = start provider->chat([{role: ai:USER, content: "Hi"}]);
+        calls.push(call);
+    }
+    (ai:ChatAssistantMessage|ai:Error)[] results = [];
+    foreach future<ai:ChatAssistantMessage|ai:Error> call in calls {
+        ai:ChatAssistantMessage|ai:Error result = wait call;
+        results.push(result);
+    }
+    return results;
 }
 
 function callChatAndGenerate(ModelProvider provider) returns error? {
@@ -343,4 +359,60 @@ function testWorkloadIdentityAuthReturnsErrorWhenExchangeFails() returns error? 
     if generateResult !is ai:LlmError {
         test:assertFail("Expected an ai:LlmError from generate");
     }
+}
+
+@test:Config
+function testWorkloadIdentityAuthStopsExchangingAfterRejection() returns error? {
+    string testId = "auth-wif-rejected";
+    // A rejected identity token cannot succeed later, so concurrent and later requests return the same error
+    // without calling the token endpoint again.
+    ModelProvider provider = check new ({
+        federationRuleId: FEDERATION_RULE_ID,
+        organizationId: ORGANIZATION_ID,
+        identityToken: "jwt-static",
+        tokenUrl: tokenUrl(testId, failAfter = -1, failDelay = 0.5)
+    }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    foreach ai:ChatAssistantMessage|ai:Error result in chatConcurrently(provider, 10) {
+        if result !is ai:LlmError {
+            test:assertFail("Expected an ai:LlmError");
+        }
+        test:assertTrue(result.message().includes("Create a new model provider with a new identity token"),
+            result.message());
+    }
+    runtime:sleep(5.5);
+    int|ai:Error later = provider->generate(`Pick a number`);
+    if later !is ai:LlmError {
+        test:assertFail("Expected an ai:LlmError after the backoff period");
+    }
+    test:assertEquals(getTokenExchangeRequests(testId).length(), 1);
+}
+
+@test:Config
+function testWorkloadIdentityAuthBacksOffAfterFailedRefresh() returns error? {
+    string testId = "auth-wif-backoff";
+    // An 8-second access token is refreshed after 4 seconds, and used until 6 seconds if the refresh fails. The
+    // token endpoint is unavailable after the first exchange and takes 0.5 seconds to fail.
+    ModelProvider provider = check new ({
+        federationRuleId: FEDERATION_RULE_ID,
+        organizationId: ORGANIZATION_ID,
+        identityToken: "jwt-static",
+        tokenUrl: tokenUrl(testId, expiresIn = 8, failAfter = 1, failDelay = 0.5, unavailable = true)
+    }, CLAUDE_SONNET_4_6, string `${CAPTURE_SERVICE_URL}/${testId}`);
+    _ = check provider->chat([{role: ai:USER, content: "Hi"}]);
+    runtime:sleep(4.2);
+    // Concurrent requests in the refresh window make one failed refresh between them and use the cached token.
+    foreach ai:ChatAssistantMessage|ai:Error result in chatConcurrently(provider, 10) {
+        _ = check result;
+    }
+    test:assertEquals(getTokenExchangeRequests(testId).length(), 2);
+    test:assertEquals(check getCapturedHeader(testId, "chat", "authorization"), "Bearer access-1");
+    // Once the cached token is past its fallback window, requests inside the backoff period return the
+    // recorded error without calling the token endpoint.
+    runtime:sleep(1.5);
+    ai:ChatAssistantMessage|ai:Error result = provider->chat([{role: ai:USER, content: "Hi"}]);
+    if result !is ai:LlmError {
+        test:assertFail("Expected the recorded ai:LlmError inside the backoff period");
+    }
+    test:assertTrue(result.message().includes("status 503"), result.message());
+    test:assertEquals(getTokenExchangeRequests(testId).length(), 2);
 }
