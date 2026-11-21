@@ -303,7 +303,7 @@ isolated function getGetResultsTool(map<json> parameters) returns map<json>[]|ai
     ];
 }
 
-isolated function generateLlmResponse(http:Client anthropicClient, string apiKey, ANTHROPIC_MODEL_NAMES modelType,
+isolated function generateLlmResponse(http:Client anthropicClient, AuthProvider authProvider, ANTHROPIC_MODEL_NAMES modelType,
         int maxTokens, decimal? temperature, ANTHROPIC_API_VERSIONS apiVersion, ai:Prompt prompt,
         typedesc<json> expectedResponseTypedesc)
             returns anydata|ai:Error {
@@ -340,12 +340,18 @@ isolated function generateLlmResponse(http:Client anthropicClient, string apiKey
         request["temperature"] = temperature;
     }
 
+    map<string> & readonly|ai:Error authHeaders = authProvider.getHeaders();
+    if authHeaders is ai:Error {
+        span.close(authHeaders);
+        return authHeaders;
+    }
+
     map<string> headers = {
-        "x-api-key": apiKey,
         "anthropic-version": apiVersion,
         "content-type": "application/json",
         "anthropic-beta": "files-api-2025-04-14"
     };
+    addAuthHeaders(headers, authHeaders);
 
     AnthropicApiResponse|error response = anthropicClient->/messages.post(request, headers);
     if response is error {

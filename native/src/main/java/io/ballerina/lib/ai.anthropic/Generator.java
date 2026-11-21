@@ -33,8 +33,8 @@ public class Generator {
                                   BObject prompt, BTypedesc expectedResponseTypedesc) {
         return env.getRuntime().callFunction(
                 new Module("ballerinax", "ai.anthropic", "1"), "generateLlmResponse", null,
-                modelProvider.get(StringUtils.fromString("AnthropicClient")), 
-                modelProvider.get(StringUtils.fromString("apiKey")), 
+                modelProvider.get(StringUtils.fromString("AnthropicClient")),
+                modelProvider.get(StringUtils.fromString("authProvider")),
                 modelProvider.get(StringUtils.fromString("modelType")),
                 modelProvider.get(StringUtils.fromString("maxTokens")),
                 modelProvider.get(StringUtils.fromString("temperature")),
