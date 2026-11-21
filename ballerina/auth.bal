@@ -76,6 +76,12 @@ public type WorkloadIdentityConfig record {|
     string tokenUrl?;
 |};
 
+# How the model provider authenticates with the Anthropic API: an API key (`string`), an API key with a
+# workspace (`ApiKeyConfig`), Workload Identity Federation (`WorkloadIdentityConfig`), or an access token
+# (`http:BearerTokenConfig`), which is not refreshed. The record types come first so that the connection form
+# offers a record editor for them.
+public type AuthConfig ApiKeyConfig|WorkloadIdentityConfig|http:BearerTokenConfig|string;
+
 # Provides the authentication headers for each request to the Anthropic API.
 type AuthProvider isolated object {
     # Returns the authentication headers to send with a request.
@@ -214,7 +220,7 @@ isolated class WorkloadIdentityAuthProvider {
 # + clientConfig - The HTTP client configuration, used for the token exchange endpoint without its retry
 # configuration
 # + return - The authentication provider, or an `ai:Error` if it could not be created
-isolated function createAuthProvider(string|ApiKeyConfig|WorkloadIdentityConfig|http:BearerTokenConfig auth,
+isolated function createAuthProvider(AuthConfig auth,
         string serviceUrl, http:ClientConfiguration clientConfig) returns AuthProvider|ai:Error {
     if auth is string {
         // Sent in the `x-api-key` header, as in 1.x, so existing users see no change on the wire.

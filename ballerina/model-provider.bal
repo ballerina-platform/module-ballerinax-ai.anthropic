@@ -99,7 +99,7 @@ public isolated client class ModelProvider {
     # + connectionConfig - Additional HTTP connection configuration
     # + return - `nil` on successful initialization; otherwise, returns an `ai:Error`
     public isolated function init(
-            @display {label: "Authentication"} string|ApiKeyConfig|WorkloadIdentityConfig|http:BearerTokenConfig apiKey,
+            @display {label: "Authentication"} AuthConfig apiKey,
             @display {label: "Model Type"} ANTHROPIC_MODEL_NAMES modelType,
             @display {label: "Service URL"} string serviceUrl = DEFAULT_ANTHROPIC_SERVICE_URL,
             @display {label: "Maximum Tokens"} int maxTokens = DEFAULT_MAX_TOKEN_COUNT,
