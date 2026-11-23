@@ -41,6 +41,33 @@ import ballerinax/ai.anthropic;
 final ai:ModelProvider anthropicModel = check new anthropic:ModelProvider("anthropicAiApiKey", anthropic:CLAUDE_SONNET_4_6);
 ```
 
+The first argument, `apiKey`, sets how the connector authenticates with the Anthropic API. It keeps its name so that existing code still compiles, but it accepts any of the following:
+
+- **API key** (`string`): sent in the `x-api-key` header, as in the example above.
+
+- **API key with a workspace** (`anthropic:ApiKeyConfig`): sent in the `Authorization: Bearer` header. Set `workspaceId` when the key is a personal or service account key that is not scoped to a workspace.
+
+    ```ballerina
+    final ai:ModelProvider anthropicModel = check new anthropic:ModelProvider(
+        {apiKey: "anthropicAiApiKey", workspaceId: "wrkspc_..."}, anthropic:CLAUDE_SONNET_4_6);
+    ```
+
+- **Workload Identity Federation** (`anthropic:WorkloadIdentityConfig`): exchanges an identity token from your identity provider (for example, AWS, Google Cloud, Microsoft Entra ID, Kubernetes, or GitHub Actions) for a short-lived Anthropic access token, so no API key is needed. The connector reuses the access token until it expires. An identity token can usually be exchanged only once, so after that, create a new model provider with a new identity token. See [Workload Identity Federation](https://platform.claude.com/docs/en/manage-claude/workload-identity-federation) for how to set up the federation rule and service account.
+
+    ```ballerina
+    final ai:ModelProvider anthropicModel = check new anthropic:ModelProvider({
+        federationRuleId: "fdrl_...",
+        organizationId: "00000000-0000-0000-0000-000000000000",
+        identityToken: "<identity token (JWT) from your identity provider>"
+    }, anthropic:CLAUDE_SONNET_4_6);
+    ```
+
+- **Access token** (`http:BearerTokenConfig`): an access token obtained elsewhere, sent in the `Authorization: Bearer` header. The connector does not refresh it, so requests fail once it expires.
+
+    ```ballerina
+    final ai:ModelProvider anthropicModel = check new anthropic:ModelProvider({token: "sk-ant-oat01-..."}, anthropic:CLAUDE_SONNET_4_6);
+    ```
+
 ### Step 4: Invoke chat completion
 
 ```ballerina
