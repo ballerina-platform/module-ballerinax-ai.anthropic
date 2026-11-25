@@ -1,8 +1,6 @@
 ## Overview
 
-Anthropic provides high-performance, safe, and reliable large language models (LLMs).
-
-The Anthropic connector offers APIs for connecting with Anthropic LLMs, enabling the integration of advanced conversational AI and language processing capabilities into applications.
+The `ai.anthropic` module provides an Anthropic-backed `ModelProvider` implementation for the [`ballerina/ai`](https://central.ballerina.io/ballerina/ai/latest) agent framework. Use it to drive Anthropic Claude models (Claude 3.5 Sonnet, Claude 3 Opus, and others) from Ballerina AI agents and other `ai`-module abstractions, rather than calling the Anthropic REST API directly.
 
 ### Key Features
 
